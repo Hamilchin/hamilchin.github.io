@@ -43,5 +43,14 @@
       }
     });
   </script>
+  <script>
+    // Hide main content when any Langton's Ant UI button is pressed
+    document.addEventListener('click', function(e) {
+      if (e.target.classList && e.target.classList.contains('ant-ui-btn')) {
+        const container = document.querySelector('.container');
+        if (container) container.style.display = 'none';
+      }
+    }, true);
+  </script>
 </body>
 </html> 
