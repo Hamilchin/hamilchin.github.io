@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alexander Chin</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=Merriweather:wght@400;700&family=Courier+Prime:wght@400;700&family=Lora:wght@400;700&family=EB+Garamond:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/computer-modern-fonts@1.0.3/css/cmu-serif.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="js/presetAnts.js"></script>
+  <script src="sketch.js"></script>
+  <script data-goatcounter="https://hamilchin.goatcounter.com/count"
+  async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+  <div class="container">
+    <img id="face-img" src="images/face_3.PNG" alt="Face" class="face-img" />
+    <h1 class="title">Alexander Chin</h1>
+    <div class="content">
+      <p>Hi, I'm Alexander. I'm a student at the University of Washington studying computer science and philosophy. Academically, I'm broadly interested in cognitive science, complexity theory, emergent phenomena, information theory, reinforcement learning agents, and the fundamentals (and philosophy) of AI, but you can just as often find me buried in a book about poetry, crow behavior, or zen buddhism.</p>
+      <p>I have taught CSE 122 and 143 at UW, and am teaching CSE 490: <em>Big Ideas in AI</em> next autumn. In my free time, I read, <a href="https://hamilchin.github.io/theviewfromafar/">write</a>, climb, and listen to <a href="https://open.spotify.com/user/0katx9se0pyjjoirt3qbyrm09?si=b2ac5c05743e4ea5">music</a>. I also lead an architecture appreciation club.</p>
+    </div>
+    <div class="links">
+      <a href="mailto:chinalexan@gmail.com" class="custom-link">Email</a> /
+      <a href="https://github.com/hamilchin" class="custom-link">Github</a> /
+      <a href="https://hamilchin.github.io/theviewfromafar" class="custom-link">Writing</a> /
+      <a href="https://x.com/alexhchin" class="custom-link">Twitter</a> /
+      <a href="Alexander_Chin_CV.pdf" class="custom-link">CV</a>
+    </div>
+  </div>
+  <script>
+    const images = [3,4,5,6,7,0,0,7,6,5,4,3,2,1,1,2];
+    let idx = 0;
+    const img = document.getElementById('face-img');
+    img.addEventListener('click', () => {
+      idx = (idx + 1) % images.length;
+      if (images[idx] === 0) {
+        img.style.opacity = '0';
+      } else {
+        img.style.opacity = '1';
+        img.src = `images/face_${images[idx]}.PNG`;
+      }
+    });
+  </script>
+</body>
+</html> 

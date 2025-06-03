@@ -1,0 +1,3 @@
+-Make instant mode
+-Optimize sim
+-way to actually display # of steps? 

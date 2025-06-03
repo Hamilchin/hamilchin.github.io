@@ -1,0 +1,177 @@
+body, html {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'IBM Plex Mono', monospace;
+  background: #fff;
+  color: #111;
+}
+
+.container {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.face-img {
+  width: 340px;
+  height: 340px;
+  object-fit: cover;
+  margin-bottom: 24px;
+  margin-top: 100px;
+  cursor: pointer;
+}
+
+.title {
+  font-size: 1.9rem;
+  font-family: 'Courier Prime', 'Courier New', Courier, monospace;
+  font-weight: 400;
+  margin: 0 0 -3px 0;
+  letter-spacing: 1px;
+}
+
+.content {
+  max-width: 540px;
+  text-align: left;
+  font-size: 110%;
+  letter-spacing: 0.1px;
+  margin-bottom: 24px;
+  font-family: 'EB Garamond', serif;
+}
+
+.content h2 {
+  font-family: 'Courier Prime', 'Courier New', Courier, monospace;
+  font-size: 1.4rem;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-weight: normal;
+}
+
+.content p {
+  margin-bottom: 10px;
+}
+
+.links {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+a, a:visited, a:hover, a:active {
+  color: #111 !important;
+  text-decoration: underline;
+}
+
+.custom-link {
+  font-weight: 500;
+  margin: 0 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.98rem;
+}
+
+canvas {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: auto;
+}
+
+/* Style for p5.js created UI elements */
+button {
+  font-family: 'IBM Plex Mono', monospace;
+  background-color: rgba(255, 255, 255, 0.8);
+  border: 1px solid #333;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  z-index: 1;
+}
+
+button:hover {
+  background-color: rgba(240, 240, 240, 0.9);
+}
+
+select {
+  font-family: 'IBM Plex Mono', monospace;
+  background-color: rgba(255, 255, 255, 0.8);
+  border: 1px solid #333;
+  padding: 3px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  z-index: 1;
+}
+
+/* Custom speed slider styling */
+#control-panel {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 100;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  box-shadow: none;
+}
+
+#controls-container {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  margin-top: 0;
+}
+
+#config-panel {
+  position: fixed;
+  top: 60px;
+  left: 10px;
+  z-index: 101;
+  padding: 0;
+  margin: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  display: none;
+}
+
+.ant-ui-btn, #restore-ui-btn {
+  font-family: 'IBM Plex Mono', monospace;
+  background: #fff;
+  border: 1px solid #333;
+  border-radius: 0;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.92;
+  box-shadow: none;
+  transition: opacity 0.2s;
+  margin: 0;
+  height: 22px;
+  min-width: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ant-ui-btn:hover, #restore-ui-btn:hover {
+  opacity: 1;
+}
+
+#restore-ui-btn {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 102;
+  padding: 4px 12px;
+  font-size: 12px;
+  min-width: unset;
+  height: unset;
+  display: none;
+} 
