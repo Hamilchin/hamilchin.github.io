@@ -1,0 +1,369 @@
+/* The home page: a column of text over the automata, which keep drawing behind it.
+   A click anywhere draws, on the words too, but the words can still be selected by
+   dragging, and links are only links. Opening the toolbar puts the page away. */
+
+:root[data-site] {
+  --ground: #121211;
+  --text: #ebe9e2;
+  --text-2: rgb(235 233 226 / 0.74);
+  --text-3: rgb(235 233 226 / 0.55);
+  --rule: rgb(235 233 226 / 0.3);
+  --serif: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --col: 33rem;
+  --left: clamp(24px, 9vw, 168px);
+}
+
+/* The page scrolls if it has to, over a world that stays put. */
+html[data-site],
+html[data-site] body {
+  height: auto;
+  min-height: 100%;
+}
+
+html[data-site] body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--ground);
+}
+
+/* When the words fit, the page is exactly the window: no scrolling, and no bouncing either. */
+html[data-site] {
+  overscroll-behavior: none;
+}
+
+html[data-site].fits body,
+html[data-site]:not(.toolbar-folded) body {
+  overflow: hidden;
+}
+
+/* Under the page the world is something to click, not a tool: an ordinary cursor, and swipes scroll. */
+html[data-site].toolbar-folded #overlay {
+  cursor: default;
+  touch-action: pan-y pinch-zoom;
+}
+
+.site {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 4vh 24px 4vh var(--left);
+  /* Clicks between and around the words fall through to the world. */
+  pointer-events: none;
+  color: var(--text-2);
+  font: 400 1.125rem/1.6 var(--serif);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  /* A breath of the ground around each letter, so the words stay clear over whatever is drawn behind them. */
+  text-shadow: 0 0 1px var(--ground), 0 0 4px var(--ground), 0 0 10px rgb(18 18 17 / 0.85);
+  transition: opacity 0.35s ease, visibility 0.35s;
+}
+
+html[data-site]:not(.toolbar-folded) .site {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.column {
+  width: 100%;
+  max-width: var(--col);
+  /* Shown once the words have arrived, so nothing jumps into place. */
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.column.ready {
+  opacity: 1;
+}
+
+/* The words take their own clicks, so they can be selected; site.js passes plain clicks on to the world. */
+.about,
+.portrait {
+  pointer-events: auto;
+}
+
+::selection {
+  background: rgb(157 147 207 / 0.4);
+  color: var(--text);
+  text-shadow: none;
+}
+
+.portrait {
+  display: block;
+  width: 8rem;
+  height: 8rem;
+  /* The drawing has room around it; this lines its edge up with the text. */
+  margin: 0 0 1.25rem -1.2rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Black strokes on clear, drawn here in the text's off-white. */
+  filter: invert(0.93);
+  opacity: 0.9;
+  transition: opacity 0.3s ease;
+}
+
+.portrait.gone img {
+  opacity: 0;
+}
+
+@media (hover: hover) {
+  .portrait:hover img {
+    opacity: 1;
+  }
+}
+
+.portrait:focus-visible {
+  outline: 1px solid var(--rule);
+  outline-offset: 2px;
+}
+
+.about h1 {
+  margin: 0 0 1.5rem;
+  color: var(--text);
+  font: 400 2.75rem/1.1 var(--serif);
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+}
+
+.about p,
+.about ul,
+.about ol {
+  margin: 0 0 0.9em;
+  text-wrap: pretty;
+}
+
+/* A line that introduces a list ("Currently, I'm:") is a drop-down, in the brighter ink. Its
+   chevron hangs in the margin with the lists' dashes, and turns down when the list opens. */
+.about details {
+  margin: 0 0 0.35em;
+}
+
+.about details[open] {
+  margin-bottom: 0.9em;
+}
+
+.about summary {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.about summary::-webkit-details-marker {
+  display: none;
+}
+
+.about summary::before {
+  content: "";
+  position: absolute;
+  top: 0.8em;
+  right: calc(100% + 0.68em);
+  width: 0.34em;
+  height: 0.34em;
+  border-right: 1px solid var(--text-3);
+  border-bottom: 1px solid var(--text-3);
+  transform: translateY(-50%) rotate(-45deg);
+  transition: transform 0.15s ease, border-color 0.15s;
+}
+
+.about details[open] > summary::before {
+  transform: translateY(-75%) rotate(45deg);
+}
+
+@media (hover: hover) {
+  .about summary:hover::before {
+    border-color: var(--text);
+  }
+}
+
+.about summary:focus-visible {
+  outline: 1px solid var(--rule);
+  outline-offset: 3px;
+}
+
+.about details > ul,
+.about details > ol {
+  margin: 0.3em 0 0;
+  animation: unfold 0.2s ease;
+}
+
+@keyframes unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* Lists hang their markers in the margin, so their words line up with the paragraphs'. */
+.about ul,
+.about ol {
+  padding: 0;
+  list-style: none;
+  line-height: 1.5;
+}
+
+.about li {
+  position: relative;
+}
+
+.about li + li {
+  margin-top: 0.2em;
+}
+
+.about ul > li::before,
+.about ol > li::before {
+  position: absolute;
+  right: calc(100% + 0.55em);
+  color: var(--text-3);
+}
+
+.about ul > li::before {
+  content: "–";
+}
+
+.about ol {
+  counter-reset: item;
+}
+
+.about ol > li {
+  counter-increment: item;
+}
+
+.about ol > li::before {
+  content: counter(item) ".";
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sections, should the page grow some. */
+.about h2,
+.about h3 {
+  margin: 1.8em 0 0.5em;
+  color: var(--text);
+  font: 400 1.35rem/1.25 var(--serif);
+}
+
+.about h3 {
+  font-size: 1.125rem;
+}
+
+.about em {
+  font-style: italic;
+}
+
+.site a {
+  /* A little more to hit than the letters, so a click that just misses a link still lands on it. */
+  padding: 0.2em 0;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+  transition: text-decoration-color 0.15s;
+}
+
+@media (hover: hover) {
+  .site a:hover {
+    text-decoration-color: var(--text);
+  }
+}
+
+.site a:focus-visible {
+  outline: 1px solid var(--rule);
+  outline-offset: 3px;
+}
+
+/* The row of links, and the postscript: set small, in the instrument's own type. */
+.about .elsewhere,
+.about .aside {
+  font: 400 0.8125rem/1.5 var(--mono);
+  letter-spacing: 0.01em;
+}
+
+.about .elsewhere {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.6rem;
+  margin: 2rem 0 0;
+}
+
+.about .elsewhere a {
+  margin: -0.35em 0;
+  padding: 0.35em 0;
+  text-underline-offset: 0.35em;
+}
+
+.about .aside {
+  margin: 2.5rem 0 0;
+  color: var(--text-3);
+}
+
+.about .aside + .aside {
+  margin-top: 0.4rem;
+}
+
+.about .aside a {
+  color: inherit;
+}
+
+.noscript {
+  position: relative;
+  z-index: 2;
+  margin: 0;
+  padding: 0 24px 6vh var(--left);
+  color: var(--text-3);
+  font: 400 0.8125rem/1.5 var(--mono);
+}
+
+/* A shorter window, like a laptop's, gets a slightly smaller page so it still fits. */
+@media (max-height: 820px) and (min-width: 641px) {
+  .site {
+    font-size: 1.0625rem;
+    line-height: 1.52;
+  }
+  .about p {
+    margin-bottom: 0.75em;
+  }
+  .portrait {
+    width: 5.25rem;
+    height: 5.25rem;
+    margin: 0 0 0.9rem -0.8rem;
+  }
+  .about h1 {
+    margin-bottom: 1.1rem;
+    font-size: 2.4rem;
+  }
+  .about .elsewhere,
+  .about .aside {
+    margin-top: 1.4rem;
+  }
+}
+
+/* On a narrow screen the column takes the width, below the folded toolbar. */
+@media (max-width: 640px) {
+  .site {
+    align-items: flex-start;
+    padding: calc(76px + env(safe-area-inset-top)) 24px calc(40px + env(safe-area-inset-bottom));
+    font-size: 1.0625rem;
+  }
+  .portrait {
+    width: 6.5rem;
+    height: 6.5rem;
+    margin-left: -1rem;
+  }
+  .about h1 {
+    font-size: 2.25rem;
+  }
+}
