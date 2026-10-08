@@ -40,6 +40,4 @@ In the past, I've:
 
 ---
 
-This [page](https://github.com/Hamilchin/hamilchin.github.io) last updated October 7, 2026.
-
-P.S: try clicking somewhere on the page!
+This [page](https://github.com/Hamilchin/hamilchin.github.io) last updated October 7, 2026. P.S: try clicking somewhere on the page!

@@ -331,6 +331,13 @@ html[data-site]:not(.toolbar-folded) .site {
   margin-top: 0.4rem;
 }
 
+/* Where there's room, a footnote stays on one line, even past the column's edge. */
+@media (min-width: 760px) {
+  .about .aside {
+    white-space: nowrap;
+  }
+}
+
 .about .aside a {
   color: inherit;
 }

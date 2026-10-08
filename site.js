@@ -15,14 +15,16 @@ about.addEventListener('click', (e) => {
 });
 
 // Lists introduced by a line of their own are drop-downs, stacked, one open at a time.
-about.addEventListener(
-  'toggle',
-  (e) => {
-    if (!e.target.open) return;
-    for (const other of e.target.parentElement.querySelectorAll(':scope > details[open]')) if (other !== e.target) other.open = false;
-  },
-  true,
-);
+// The others close in the same moment one opens (the stack shares a name, and a click
+// closes them before its own opens), so there is never a frame with two lists open.
+function closeOthers(group) {
+  for (const other of group.parentElement.querySelectorAll(':scope > details[open]')) if (other !== group) other.open = false;
+}
+about.addEventListener('click', (e) => {
+  const summary = e.target.closest('summary');
+  if (summary && !summary.parentElement.open) closeOthers(summary.parentElement);
+});
+about.addEventListener('toggle', (e) => e.target.open && closeOthers(e.target), true);
 
 /**
  * The stack keeps the height it has with its longest list open, so opening one moves
@@ -46,7 +48,8 @@ fetch('about.md')
   .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status} ${r.statusText}`))))
   .then(async (md) => {
     about.innerHTML = render(md);
-    await document.fonts.ready;
+    // Measure in the real type, italics included, though no italic shows until a list opens.
+    await Promise.all(['400 1em Newsreader', 'italic 400 1em Newsreader', '400 1em "IBM Plex Mono"'].map((f) => document.fonts.load(f)));
     holdStacks();
     fitPage();
   })
@@ -61,10 +64,12 @@ function fitPage() {
   root.classList.toggle('fits', root.scrollHeight <= innerHeight);
 }
 
-addEventListener('resize', () => {
+const refit = () => {
   holdStacks();
   fitPage();
-});
+};
+addEventListener('resize', refit);
+document.fonts.addEventListener('loadingdone', refit);
 
 /**
  * Headings, paragraphs, emphasis, links and lists, written the way people write
@@ -79,7 +84,8 @@ export function render(md) {
   let stack = null; // the drop-downs being gathered: [{ label, panel }]
   const closeStack = () => {
     if (!stack) return;
-    out.push(`<div class="stack">${stack.map((t, i) => `<details${i === 0 ? ' open' : ''}><summary>${t.label}</summary>${t.panel}</details>`).join('')}</div>`);
+    const name = `stack-${out.length}`;
+    out.push(`<div class="stack">${stack.map((t, i) => `<details name="${name}"${i === 0 ? ' open' : ''}><summary>${t.label}</summary>${t.panel}</details>`).join('')}</div>`);
     stack = null;
   };
   for (const block of md.replace(/<!--[\s\S]*?-->/g, '').replace(/\r\n?/g, '\n').split(/\n[ \t]*\n/)) {
