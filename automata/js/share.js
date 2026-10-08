@@ -1,6 +1,6 @@
 // Shareable links, and the library's saved worlds. A link carries the rule, colors
-// and world settings and the world exactly as it is: every cell, every ant and the
-// step count. Grids are bit-packed and deflated; an untouched random fill is sent
+// and world settings and the world exactly as it is: every cell, every ant (or a
+// Turing machine's head) and the step count. Grids are bit-packed and deflated; an untouched random fill is sent
 // as the seed that made it.
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -71,6 +71,8 @@ export async function encodeState(s) {
   if (s.recipe) q.set('d', `*${s.recipe.seed}_${s.recipe.density}_${s.recipe.area ?? 1}`);
   else if (s.grid.some((v) => v)) q.set('d', await packCells(s.grid, bitsFor(s.states)));
   if (s.ants && s.ants.length) q.set('a', s.ants.map((a) => `${a.x}.${a.y}.${a.d}.${a.s}${a.alive ? '' : '.0'}`).join('_'));
+  // A Turing machine's head: where it is, its state, the color under it, and whether it has halted.
+  if (s.head) q.set('t', `${s.head.x}.${s.head.s}.${s.head.c}${s.head.halted ? '.h' : ''}`);
   if (s.gen) q.set('g', s.gen);
   if (s.view) q.set('v', [s.view.cx, s.view.cy, s.view.zoom].map((v) => +v.toFixed(2)).join('_'));
   return q.toString();
@@ -79,7 +81,7 @@ export async function encodeState(s) {
 export async function decodeState(hash) {
   const q = new URLSearchParams(hash.replace(/^#/, ''));
   const mode = q.get('m');
-  if (!['life', 'eca', 'ant'].includes(mode)) return null;
+  if (!['life', 'eca', 'ant', 'turing'].includes(mode)) return null;
   const [W, H] = (q.get('s') || '').split('x').map(Number);
   if (!(W > 0 && H > 0)) return null;
   const [ox, oy] = (q.get('o') || '0_0').split('_').map((v) => Math.round(+v) || 0);
@@ -100,8 +102,13 @@ export async function decodeState(hash) {
           return { x, y, d: d || 0, s: s || 0, alive: alive !== 0 };
         })
       : [],
+    head: null,
     view: null,
   };
+  if (q.get('t')) {
+    const [x, st, c, h] = q.get('t').split('.');
+    out.head = { x: Math.round(+x) || 0, s: Math.round(+st) || 0, c: Math.round(+c) || 0, halted: h === 'h' };
+  }
   if (q.get('v')) {
     const [cx, cy, zoom] = q.get('v').split('_').map(Number);
     if ([cx, cy, zoom].every(isFinite) && zoom > 0) out.view = { cx, cy, zoom };

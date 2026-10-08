@@ -23,6 +23,8 @@ const SHELL = (home) => `
       <button type="button" role="radio" data-mode="eca" aria-checked="false" title="Elementary, one-dimensional (2)">1D</button>
       <button type="button" role="radio" data-mode="ant" aria-checked="true" title="Langton’s ant and turmites (3)">Ant</button>
       <button type="button" role="radio" data-mode="test" aria-checked="false" title="Click anywhere to start a random 1D automaton (4)">Test</button>
+      <button type="button" role="radio" data-mode="turing" aria-checked="false" title="Turing machines on a 1D tape (5)">Turing</button>
+      <button type="button" role="radio" data-mode="interesting" aria-checked="false" title="Click anywhere to start a 1D automaton chosen for being worth watching (6)">Interesting</button>
     </div>
     <span class="sep" aria-hidden="true"></span>
     <button type="button" id="back" class="btn" data-icon="back" aria-label="Step back" title="Step back (←)"></button>
@@ -131,16 +133,16 @@ const SHELL = (home) => `
     <dt><kbd>D</kbd></dt><dd>Random rule</dd>
     <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Slower, faster</dd>
     <dt><kbd>+</kbd> <kbd>−</kbd> <kbd>F</kbd></dt><dd>Zoom in, out, fit</dd>
-    <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></dt><dd>Life, 1D, Ant, Test</dd>
+    <dt><kbd>1</kbd> … <kbd>6</kbd></dt><dd>Life, 1D, Ant, Test, Turing, Interesting</dd>
     <dt><kbd>C</kbd></dt><dd>Configs</dd>
     <dt><kbd>G</kbd></dt><dd>Grid lines</dd>
     <dt>Drag</dt><dd>Draw. Starting on a filled cell erases.</dd>
     <dt><kbd>⇧</kbd> drag</dt><dd>Straight line</dd>
     <dt>Right drag</dt><dd>Move around (or <kbd>Space</kbd> drag)</dd>
     <dt>Scroll</dt><dd>Zoom</dd>
-    <dt>Click</dt><dd>Ants: place one, or turn it</dd>
+    <dt>Click</dt><dd>Ants: place one, or turn it. Turing: put the head there</dd>
     <dt>Right click</dt><dd>Ants: remove one</dd>
-    <dt>Click, drag</dt><dd>Test: start automata</dd>
+    <dt>Click, drag</dt><dd>Test, Interesting: start automata</dd>
   </dl>
 </dialog>
 

@@ -13,9 +13,9 @@
 
 Hello! I'm Alexander. I'm broadly interested in reinforcement learning, the philosophy of mind, and technical AI alignment, but you can just as often find me buried in a book about poetry, crow behavior, philosophy of physics, complexity theory, or zen buddhism.
 
-In my free time, I [read](https://hamilchin.github.io/theviewfromafar/links/Bookshelf.html), [write](https://hamilchin.github.io/theviewfromafar/), listen to [music](https://open.spotify.com/user/0katx9se0pyjjoirt3qbyrm09?si=b2ac5c05743e4ea5). Feel free to reach out via email for any reason if you want to chat!
+In my free time, I [read](https://hamilchin.github.io/theviewfromafar/links/Bookshelf.html), [write](https://hamilchin.github.io/theviewfromafar/), and listen to [music](https://open.spotify.com/user/0katx9se0pyjjoirt3qbyrm09?si=b2ac5c05743e4ea5). Feel free to reach out via email for any reason if you want to chat!
 
-Currently, I'm: 
+Currently, I'm:
 - Living in SF
 - Thinking about what alignment techniques we might need to address reward hacking during RL
 - Working at Tesla training real-time computer-use agents
@@ -25,13 +25,13 @@ In the future, I'd like to:
 - Get much better at DJing
 - Fix my sleep schedule
 
-In the past, I've: 
-- worked on Edtech at Synthesis
-- done research on model-based reinforcement learning
-- dropped out of high school
-- Taught 3 great classes at UW: CSE 122 and 143, and CSE 490: *Big Ideas in AI*. 
-- lead UW's architecture appreciation club
-- spent a summer trying to figure out the 'hard problem' of consciousness
+In the past, I've:
+- Done research on model-based reinforcement learning
+- Taught 3 great classes at UW: CSE 122 and 143, and CSE 490: *Big Ideas in AI*
+- Led UW's architecture appreciation club
+- Dropped out of high school, then university
+- Spent a summer trying to figure out the 'hard problem' of consciousness
+- Worked on edtech at Synthesis and research w/ Microsoft on CUA benchmarks
 
 - [Email](mailto:chinalexan@gmail.com)
 - [Github](https://github.com/hamilchin)

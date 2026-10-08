@@ -5,6 +5,7 @@ import { h } from './util.js';
 import { icon, turnIcon } from './icons.js';
 import { inkOn } from './palettes.js';
 import { antRule, antString, isAnt, withColors, withNext, withStates, withTurn, withWrite, MAX_COLORS, MAX_STATES } from './ant.js';
+import * as TM from './turing.js';
 
 // ---------------------------------------------------------------- Life-like
 
@@ -234,6 +235,91 @@ export function antEditor(onChange) {
       size.replaceChildren(
         stepper('Colors', r.colors, 2, MAX_COLORS, (d) => onChange(withColors(rule, rule.colors + d))),
         stepper('States', r.states, 1, MAX_STATES, (d) => setStates(rule.states + d)),
+      );
+      again();
+    },
+  };
+}
+
+// ---------------------------------------------------------------- Turing machines
+
+/**
+ * A Turing machine is a table: one row per state, marked in the color its head
+ * shows in the picture, and one column per color the head may read. Each cell holds
+ * the color written, the way the head moves and the state it goes to next, or H to
+ * halt. Clicking a part changes it; a case left undefined halts the machine.
+ */
+export function turingEditor(onChange) {
+  let rule = null, colors = [];
+  const body = h('div.machine-body');
+  const size = h('div.machine-size');
+  const el = h('div.turing-editor', null, body, size);
+
+  const refocus = () => {
+    const key = document.activeElement?.dataset?.key;
+    return () => key && el.querySelector(`[data-key="${key}"]`)?.focus();
+  };
+
+  function render() {
+    const S = rule.states, K = rule.colors;
+    const table = h('table.machine');
+    const head = h('tr', null, h('th', { scope: 'col', class: 'corner' }, h('span.sr', { text: 'State' })));
+    for (let c = 0; c < K; c++) head.append(h('th', { scope: 'col' }, h('span.swatch', { style: { '--chip': colors[c] }, title: `Color ${c}` }), h('span.sr', { text: `Reading color ${c}` })));
+    table.append(h('thead', null, head));
+    const tbody = h('tbody');
+    for (let s = 0; s < S; s++) {
+      const name = TM.stateLetter(s);
+      const tr = h('tr', null, h('th', { scope: 'row' }, h('span.state.head-state', { text: name, style: { '--head': colors[K + s] }, title: `State ${name}, drawn in this color` })));
+      for (let c = 0; c < K; c++) {
+        const i = s * K + c, defined = TM.isDefined(rule, s, c);
+        const w = rule.write[i], m = rule.move[i], n = rule.next[i];
+        const where = `State ${name}, reading color ${c}`;
+        const cell = h(
+          'div.op',
+          { class: defined ? '' : 'undefined' },
+          h('button.op-write', {
+            type: 'button',
+            dataset: { key: `w${s}.${c}` },
+            style: { '--chip': defined ? colors[w] : 'transparent' },
+            'aria-label': defined ? `${where}: write color ${w}` : `${where}: undefined, halts`,
+            title: defined ? `Write color ${w}` : 'Undefined: halts here',
+            onclick: () => onChange(TM.withWrite(rule, s, c, defined ? w + 1 : 0)),
+          }),
+          h('button.op-move', {
+            type: 'button',
+            dataset: { key: `m${s}.${c}` },
+            'aria-label': `${where}: move ${m > 0 ? 'right' : 'left'}`,
+            title: `Move ${m > 0 ? 'right' : 'left'}`,
+            html: defined ? icon(m > 0 ? 'arrow-right' : 'arrow-left', 16) : '',
+            onclick: () => onChange(TM.withMove(rule, s, c, defined ? -m : 1)),
+          }),
+          h('button.op-next', {
+            type: 'button',
+            dataset: { key: `n${s}.${c}` },
+            'aria-label': `${where}: then ${n === TM.HALT ? 'halt' : `state ${TM.stateLetter(n)}`}`,
+            title: n === TM.HALT ? 'Then halt' : `Then state ${TM.stateLetter(n)}`,
+            text: TM.stateLetter(n),
+            onclick: () => onChange(TM.withNext(rule, s, c, n === TM.HALT ? 0 : n + 1)),
+          }),
+        );
+        tr.append(h('td', null, cell));
+      }
+      tbody.append(tr);
+    }
+    table.append(tbody);
+    body.replaceChildren(h('div.machine-scroll', null, table));
+  }
+
+  return {
+    el,
+    update(r, cols) {
+      rule = r;
+      colors = cols;
+      const again = refocus();
+      render();
+      size.replaceChildren(
+        stepper('Colors', r.colors, 2, TM.MAX_COLORS, (d) => onChange(TM.withColors(rule, rule.colors + d))),
+        stepper('States', r.states, 1, TM.MAX_STATES, (d) => onChange(TM.withStates(rule, rule.states + d))),
       );
       again();
     },

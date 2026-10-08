@@ -16,6 +16,8 @@ const P = {
   left: '<path d="m12 5-5 5 5 5"/>',
   right: '<path d="m8 5 5 5-5 5"/>',
   down: '<path d="m5 8 5 5 5-5"/>',
+  'arrow-left': '<path d="M15.5 10h-11"/><path d="m8.5 6-4 4 4 4"/>',
+  'arrow-right': '<path d="M4.5 10h11"/><path d="m11.5 6 4 4-4 4"/>',
 };
 
 export function icon(name, size = 18) {

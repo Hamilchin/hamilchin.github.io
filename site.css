@@ -90,15 +90,18 @@ html[data-site]:not(.toolbar-folded) .site {
   text-shadow: none;
 }
 
+/* The drawing in black, as drawn, on a card of the text's off-white. When the drawing comes
+   apart and vanishes, the card stays, blank, until it draws itself back. */
 .portrait {
   display: block;
-  width: 8rem;
-  height: 8rem;
-  /* The drawing has room around it; this lines its edge up with the text. */
-  margin: 0 0 1.25rem -1.2rem;
+  width: 6.25rem;
+  height: 6.25rem;
+  margin: 0 0 1.25rem;
   padding: 0;
   border: 0;
-  background: none;
+  border-radius: 2px;
+  background: #f2f1ec;
+  overflow: hidden;
   cursor: pointer;
 }
 
@@ -106,20 +109,11 @@ html[data-site]:not(.toolbar-folded) .site {
   display: block;
   width: 100%;
   height: 100%;
-  /* Black strokes on clear, drawn here in the text's off-white. */
-  filter: invert(0.93);
-  opacity: 0.9;
   transition: opacity 0.3s ease;
 }
 
 .portrait.gone img {
   opacity: 0;
-}
-
-@media (hover: hover) {
-  .portrait:hover img {
-    opacity: 1;
-  }
 }
 
 .portrait:focus-visible {
@@ -142,50 +136,66 @@ html[data-site]:not(.toolbar-folded) .site {
   text-wrap: pretty;
 }
 
-/* A line that introduces a list ("Currently, I'm:") is a drop-down, in the brighter ink. Its
-   chevron hangs in the margin with the lists' dashes, and turns down when the list opens. */
-.about details {
-  margin: 0 0 0.35em;
+/* Lists introduced by a line of their own are drop-downs, stacked: each a small label in
+   the instrument's type, with a chevron after it that turns down when its list opens. */
+.about p + .stack {
+  margin-top: 0.95em;
 }
 
-.about details[open] {
-  margin-bottom: 0.9em;
+.about .stack {
+  margin: 0 0 0.9em;
+}
+
+.about details + details {
+  margin-top: 0.3em;
 }
 
 .about summary {
-  position: relative;
   display: block;
   width: fit-content;
   max-width: 100%;
-  color: var(--text);
+  color: var(--text-2);
+  font: 400 0.75rem/1.5 var(--mono);
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.35em;
   cursor: pointer;
   list-style: none;
+  transition: color 0.15s, text-decoration-color 0.15s;
 }
 
 .about summary::-webkit-details-marker {
   display: none;
 }
 
-.about summary::before {
+.about summary::after {
   content: "";
-  position: absolute;
-  top: 0.8em;
-  right: calc(100% + 0.68em);
-  width: 0.34em;
-  height: 0.34em;
-  border-right: 1px solid var(--text-3);
-  border-bottom: 1px solid var(--text-3);
-  transform: translateY(-50%) rotate(-45deg);
-  transition: transform 0.15s ease, border-color 0.15s;
+  display: inline-block;
+  width: 0.38em;
+  height: 0.38em;
+  margin-left: 0.6em;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  vertical-align: 0.18em;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
 }
 
-.about details[open] > summary::before {
-  transform: translateY(-75%) rotate(45deg);
+.about details[open] > summary {
+  color: var(--text);
+  text-decoration-color: currentColor;
+}
+
+.about details[open] > summary::after {
+  vertical-align: 0.3em;
+  transform: rotate(45deg);
 }
 
 @media (hover: hover) {
-  .about summary:hover::before {
-    border-color: var(--text);
+  .about summary:hover {
+    color: var(--text);
+    text-decoration-color: currentColor;
   }
 }
 
@@ -194,10 +204,17 @@ html[data-site]:not(.toolbar-folded) .site {
   outline-offset: 3px;
 }
 
+/* The items, indented under their label, close together. */
 .about details > ul,
 .about details > ol {
-  margin: 0.3em 0 0;
+  margin: 0.35em 0 0.35em;
+  padding-left: 1.15em;
+  line-height: 1.38;
   animation: unfold 0.2s ease;
+}
+
+.about details li + li {
+  margin-top: 0.1em;
 }
 
 @keyframes unfold {
@@ -207,10 +224,10 @@ html[data-site]:not(.toolbar-folded) .site {
   }
 }
 
-/* Lists hang their markers in the margin, so their words line up with the paragraphs'. */
+/* Lists: small round bullets, set in from the edge. */
 .about ul,
 .about ol {
-  padding: 0;
+  padding-left: 1.15em;
   list-style: none;
   line-height: 1.5;
 }
@@ -226,12 +243,12 @@ html[data-site]:not(.toolbar-folded) .site {
 .about ul > li::before,
 .about ol > li::before {
   position: absolute;
-  right: calc(100% + 0.55em);
+  right: calc(100% + 0.6em);
   color: var(--text-3);
 }
 
 .about ul > li::before {
-  content: "–";
+  content: "•";
 }
 
 .about ol {
@@ -296,7 +313,7 @@ html[data-site]:not(.toolbar-folded) .site {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 1.6rem;
-  margin: 2rem 0 0;
+  margin: 1.35rem 0 0;
 }
 
 .about .elsewhere a {
@@ -306,7 +323,7 @@ html[data-site]:not(.toolbar-folded) .site {
 }
 
 .about .aside {
-  margin: 2.5rem 0 0;
+  margin: 1.5rem 0 0;
   color: var(--text-3);
 }
 
@@ -339,7 +356,7 @@ html[data-site]:not(.toolbar-folded) .site {
   .portrait {
     width: 5.25rem;
     height: 5.25rem;
-    margin: 0 0 0.9rem -0.8rem;
+    margin-bottom: 0.9rem;
   }
   .about h1 {
     margin-bottom: 1.1rem;
@@ -348,6 +365,30 @@ html[data-site]:not(.toolbar-folded) .site {
   .about .elsewhere,
   .about .aside {
     margin-top: 1.4rem;
+  }
+}
+
+/* And a little tighter still on the shortest laptop windows. */
+@media (max-height: 760px) and (min-width: 641px) {
+  .site {
+    padding-top: 3vh;
+    padding-bottom: 3vh;
+    font-size: 1rem;
+  }
+  .portrait {
+    width: 4.5rem;
+    height: 4.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .about p {
+    margin-bottom: 0.6em;
+  }
+  .about p + .stack {
+    margin-top: 0.9em;
+  }
+  .about .elsewhere,
+  .about .aside {
+    margin-top: 1.1rem;
   }
 }
 
@@ -361,7 +402,6 @@ html[data-site]:not(.toolbar-folded) .site {
   .portrait {
     width: 6.5rem;
     height: 6.5rem;
-    margin-left: -1rem;
   }
   .about h1 {
     font-size: 2.25rem;

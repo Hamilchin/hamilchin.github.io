@@ -14,6 +14,9 @@
 //
 // The rules are Wolfram's: elementary rules for two colors, and totalistic rules
 // for three to ten, where a new cell depends on the sum of the three cells above.
+// A world can instead draw from a catalog of chosen rules (see interesting.js), which
+// may look two cells to each side, remember the line before last, or start from a
+// strip of random cells rather than one.
 //
 // Color follows state, so state 1 is the same color wherever it appears, and the
 // states run in order along a gradient. Every painted cell gets a time to go: it
@@ -292,18 +295,47 @@ export class TestWorld {
     const id = ++this.serial;
     if (fresh) this.drawing = id;
     if (this.runs.length >= MAX_RUNS) this.runs.shift();
-    const rule = randomRule(rng, this.tuning.min, this.tuning.max);
+    const rule = this.catalog ? this._pick(rng) : randomRule(rng, this.tuning.min, this.tuning.max);
     const at = x - bx;
     // `at`: when its newest line was (or would have been) drawn. `freeAt`: when its drawing was let go; Infinity while it's held.
-    const run = { id, rule, bx, n, wraps, row: new Uint8Array(n), next: new Uint8Array(n), lo: at, hi: at, s0: at, s1: at, y, y0: y, dead: false };
+    // A rule with memory also keeps the line before last, `prev`, and where it was lit (plo…phi).
+    const run = { id, rule, bx, n, wraps, row: new Uint8Array(n), next: new Uint8Array(n), prev: rule.mem ? new Uint8Array(n) : null, lo: at, hi: at, plo: Infinity, phi: -Infinity, s0: at, s1: at, y, y0: y, dead: false };
     run.at = this.clock;
     run.freeAt = this.tuning.persist ? Infinity : -Infinity;
-    run.row[at] = rule.seed;
+    if (rule.block) this._strip(run, at, rule.block, rng);
+    else run.row[at] = rule.seed;
     this.runs.push(run);
     this._paint(run);
-    this.log.unshift({ rule, code: rule.tot ? ruleCode(rule) : null, x: x + this.ox, y: y + this.oy });
+    this.log.unshift({ rule, name: rule.name, code: rule.tot && !rule.name ? ruleCode(rule) : null, x: x + this.ox, y: y + this.oy });
     this.log.length = Math.min(this.log.length, 8);
     return run;
+  }
+
+  /** A rule from the world's catalog: a family at random, then a rule from it, so every family gets its turn. */
+  _pick(rng) {
+    const family = this.catalog[Math.floor(rng() * this.catalog.length)];
+    return family[Math.floor(rng() * family.length)];
+  }
+
+  /** Starts a run from a strip of random cells centered on column `at`, instead of a single cell. */
+  _strip(r, at, width, rng) {
+    const n = r.n, k = r.rule.k, w = Math.min(width, n), u0 = at - (w >> 1);
+    let lo = Infinity, hi = -Infinity;
+    for (let u = u0; u < u0 + w; u++) {
+      const x = r.wraps ? ((u % n) + n) % n : u;
+      if (x < 0 || x >= n) continue;
+      const v = rng() < 0.5 ? 1 + Math.floor(rng() * (k - 1)) : 0;
+      r.row[x] = v;
+      if (v) {
+        if (lo === Infinity) lo = u;
+        hi = u;
+      }
+    }
+    if (hi < lo) {
+      r.row[at] = 1;
+      lo = hi = at;
+    }
+    [r.lo, r.hi, r.s0, r.s1] = [lo, hi, lo, hi];
   }
 
   /**
@@ -414,10 +446,15 @@ export class TestWorld {
     if (r.y + 1 >= this.H && !this._roomBelow()) return false;
     if (r.dead) return false;
     r.y++;
-    const n = r.n, row = r.row, next = r.next, wraps = r.wraps, { out, tot } = r.rule;
-    // A pattern widens by at most a cell a side per line. Columns count on past the
-    // band's sides (unwrapped) until the pattern reaches all the way around.
-    let a = r.lo - 1, b = r.hi + 1;
+    const n = r.n, row = r.row, next = r.next, prev = r.prev, wraps = r.wraps, { out, tot, k } = r.rule, R = r.rule.r || 1;
+    // A pattern widens by at most R cells a side per line, and with memory the line
+    // before last counts too. Columns count on past the band's sides (unwrapped) until
+    // the pattern reaches all the way around.
+    let a = r.lo - R, b = r.hi + R;
+    if (prev && r.phi >= r.plo) {
+      if (r.plo < a) a = r.plo;
+      if (r.phi > b) b = r.phi;
+    }
     if (!wraps) {
       if (a < 0) a = 0;
       if (b > n - 1) b = n - 1;
@@ -426,21 +463,36 @@ export class TestWorld {
       b = n - 1;
     }
     const start = wraps ? ((a % n) + n) % n : a;
-    for (let u = a, x = start; u <= b; u++, x++) {
-      if (x === n) x = 0;
-      const l = x > 0 ? row[x - 1] : wraps ? row[n - 1] : 0;
-      const rr = x < n - 1 ? row[x + 1] : wraps ? row[0] : 0;
-      next[x] = cell(out, tot, l, row[x], rr);
+    if (R === 1 && !prev) {
+      for (let u = a, x = start; u <= b; u++, x++) {
+        if (x === n) x = 0;
+        const l = x > 0 ? row[x - 1] : wraps ? row[n - 1] : 0;
+        const rr = x < n - 1 ? row[x + 1] : wraps ? row[0] : 0;
+        next[x] = cell(out, tot, l, row[x], rr);
+      }
+    } else {
+      // Wider neighborhoods, and memory: the new cell is the rule's, less the cell two lines up.
+      const at = (j) => (j < 0 ? (wraps ? row[j + n] : 0) : j >= n ? (wraps ? row[j - n] : 0) : row[j]);
+      for (let u = a, x = start; u <= b; u++, x++) {
+        if (x === n) x = 0;
+        let v = 0;
+        for (let d = -R; d <= R; d++) v = tot ? v + at(x + d) : v * k + at(x + d);
+        v = out[v];
+        next[x] = prev ? (v - prev[x] + k) % k : v;
+      }
     }
     let lo = Infinity, hi = -Infinity;
     for (let u = a, x = start; u <= b; u++, x++) {
       if (x === n) x = 0;
+      if (prev) prev[x] = row[x];
       if ((row[x] = next[x])) {
         if (lo === Infinity) lo = u;
         hi = u;
       }
     }
-    if (hi < lo) return false;
+    if (prev) [r.plo, r.phi] = [r.lo, r.hi];
+    // Gone, unless the line before last can still bring it back.
+    if (hi < lo && !(prev && r.phi >= r.plo)) return false;
     r.lo = lo;
     r.hi = hi;
     if (lo < r.s0) r.s0 = lo;
@@ -589,7 +641,7 @@ export class TestWorld {
   }
 
   snapshot() {
-    const copy = (r) => ({ ...r, row: r.row.slice(), next: r.next.slice() });
+    const copy = (r) => ({ ...r, row: r.row.slice(), next: r.next.slice(), prev: r.prev && r.prev.slice() });
     return {
       W: this.W,
       H: this.H,
@@ -635,7 +687,7 @@ export class TestWorld {
     this.drawing = snap.drawing ?? this.drawing;
     this.holding = !!snap.holding;
     this.frame = snap.frame ? { ...snap.frame } : null;
-    this.runs = (snap.runs || []).map((r) => ({ ...r, row: r.row.slice(), next: r.next.slice() }));
+    this.runs = (snap.runs || []).map((r) => ({ ...r, row: r.row.slice(), next: r.next.slice(), prev: r.prev && r.prev.slice() }));
     this._box();
     this.rows = [0, this.H - 1];
   }

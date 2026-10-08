@@ -5,6 +5,7 @@
 import { LifeWorld } from './life.js';
 import { ElementaryWorld } from './elementary.js';
 import { AntWorld } from './ant.js';
+import { TuringWorld } from './turing.js';
 import { hexToRgb } from './palettes.js';
 import { rng } from './util.js';
 
@@ -101,6 +102,30 @@ export function antThumb(canvas, rule, colors, steps, antColor) {
   const sx = Math.max(0, Math.min(THUMB - side, Math.round((x0 + x1 + 1 - side) / 2)));
   const sy = Math.max(0, Math.min(THUMB - side, Math.round((y0 + y1 + 1 - side) / 2)));
   paint(canvas, side, side, (x, y) => w.grid[(y + sy) * THUMB + x + sx], colors, [[w.ax[0] - sx, w.ay[0] - sy]], antColor);
+}
+
+/**
+ * A machine's first steps from a blank tape, framed on the cells it has touched, so
+ * a busy beaver that halts after a handful of steps still fills its tile.
+ */
+export function turingThumb(canvas, rule, colors) {
+  const W = 2 * THUMB + 1, w = new TuringWorld(W, THUMB);
+  w.wrap = false;
+  w.setRule(rule);
+  w.clear();
+  w.step(THUMB - 1);
+  const rows = w.currentRow + 1;
+  let x0 = W, x1 = -1;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!w.get(x, y)) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+    }
+  }
+  const side = Math.min(THUMB, Math.max(12, rows + 2, x1 - x0 + 5));
+  const sx = Math.round((x0 + x1 + 1 - side) / 2), sy = rows + 2 < side ? -Math.floor((side - rows) / 2) : 0;
+  paint(canvas, side, side, (x, y) => (y + sy >= 0 && y + sy < rows && x + sx >= 0 && x + sx < W ? w.get(x + sx, y + sy) : 0), colors);
 }
 
 /**

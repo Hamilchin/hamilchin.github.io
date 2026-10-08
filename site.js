@@ -14,13 +14,40 @@ about.addEventListener('click', (e) => {
   globalThis.automata?.drawAt(e.clientX, e.clientY);
 });
 
+// Lists introduced by a line of their own are drop-downs, stacked, one open at a time.
+about.addEventListener(
+  'toggle',
+  (e) => {
+    if (!e.target.open) return;
+    for (const other of e.target.parentElement.querySelectorAll(':scope > details[open]')) if (other !== e.target) other.open = false;
+  },
+  true,
+);
+
+/**
+ * The stack keeps the height it has with its longest list open, so opening one moves
+ * only the titles under it: the words above and the links below stay where they are.
+ */
+function holdStacks() {
+  for (const stack of about.querySelectorAll('.stack')) {
+    const groups = [...stack.children], open = groups.map((g) => g.open);
+    stack.style.minHeight = '';
+    let tallest = 0;
+    for (const g of groups) {
+      groups.forEach((other) => (other.open = other === g));
+      tallest = Math.max(tallest, stack.getBoundingClientRect().height);
+    }
+    groups.forEach((g, i) => (g.open = open[i]));
+    stack.style.minHeight = `${Math.ceil(tallest)}px`;
+  }
+}
+
 fetch('about.md')
   .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status} ${r.statusText}`))))
   .then(async (md) => {
     about.innerHTML = render(md);
-    // Measure in the real type, then open as many lists as fit.
     await document.fonts.ready;
-    openWhatFits();
+    holdStacks();
     fitPage();
   })
   .catch((err) => {
@@ -29,64 +56,37 @@ fetch('about.md')
   })
   .finally(() => column.classList.add('ready'));
 
-// The page fits the window exactly and doesn't scroll. Its lists are drop-downs, open
-// as far as there is room; opening one closes others if it has to, and if even that
-// isn't enough, the words get a little smaller. Only a very short window scrolls.
-const MIN_ZOOM = 0.85;
-const overflows = () => root.scrollHeight > innerHeight;
-
-/** Opens the lists from the top for as long as the page still fits the window. */
-function openWhatFits() {
-  for (const group of about.querySelectorAll('details')) {
-    group.open = true;
-    if (overflows()) {
-      group.open = false;
-      break;
-    }
-  }
-}
-
-/** Shrinks the words just enough to fit, if they don't, and locks the page when they do. */
+// While the page fits the window it doesn't scroll; on a screen too small for it, it does.
 function fitPage() {
-  column.style.zoom = '';
-  const pad = getComputedStyle(site);
-  const room = innerHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom);
-  const height = column.getBoundingClientRect().height;
-  const zoom = height <= room ? 1 : Math.max(MIN_ZOOM, room / height);
-  if (zoom < 1) column.style.zoom = zoom;
-  root.classList.toggle('fits', height * zoom <= room + 1);
+  root.classList.toggle('fits', root.scrollHeight <= innerHeight);
 }
 
-about.addEventListener(
-  'toggle',
-  (e) => {
-    if (e.target.open) {
-      // Opening a list closes others, the furthest down first, until the page fits again.
-      column.style.zoom = '';
-      for (const group of [...about.querySelectorAll('details[open]')].reverse()) {
-        if (!overflows()) break;
-        if (group !== e.target) group.open = false;
-      }
-    }
-    fitPage();
-  },
-  true,
-);
-addEventListener('resize', fitPage);
+addEventListener('resize', () => {
+  holdStacks();
+  fitPage();
+});
 
 /**
  * Headings, paragraphs, emphasis, links and lists, written the way people write
  * them: a list can follow the line that introduces it ("Currently, I'm:") with no
- * blank line between, and the two become a drop-down. A list of nothing but links
- * becomes the row of links, and what comes after a line of three dashes is set small.
+ * blank line between, and lists introduced that way, one after another, become a
+ * stack of drop-downs with the first one open. A list of nothing but links becomes
+ * the row of links, and what comes after a line of three dashes is set small.
  */
 export function render(md) {
   const out = [];
   let aside = false;
+  let stack = null; // the drop-downs being gathered: [{ label, panel }]
+  const closeStack = () => {
+    if (!stack) return;
+    out.push(`<div class="stack">${stack.map((t, i) => `<details${i === 0 ? ' open' : ''}><summary>${t.label}</summary>${t.panel}</details>`).join('')}</div>`);
+    stack = null;
+  };
   for (const block of md.replace(/<!--[\s\S]*?-->/g, '').replace(/\r\n?/g, '\n').split(/\n[ \t]*\n/)) {
     const lines = block.split('\n').filter((line) => line.trim());
     if (!lines.length) continue;
     if (lines.length === 1 && /^ {0,3}([-*_])( *\1){2,} *$/.test(lines[0])) {
+      closeStack();
       aside = true;
       continue;
     }
@@ -112,20 +112,30 @@ export function render(md) {
     };
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i], next = parts[i + 1];
-      if (part.kind === 'heading') out.push(`<h${part.level}>${inline(part.text)}</h${part.level}>`);
-      else if (part.kind === 'prose') {
+      if (part.kind === 'heading') {
+        closeStack();
+        out.push(`<h${part.level}>${inline(part.text)}</h${part.level}>`);
+      } else if (part.kind === 'prose') {
         // Two spaces or a backslash at the end of a line break it there.
         const text = inline(part.lines.map((line, j) => (j < part.lines.length - 1 && /( {2,}|\\)$/.test(line) ? line.replace(/\\$/, '').trim() + '\n' : line.trim())).join(' ')).replace(/\n /g, '<br>');
-        // A line introducing a list opens it.
+        // A line introducing a list becomes a drop-down for it.
         if (next?.kind === 'list') {
-          out.push(`<details><summary>${text}</summary>${list(next)}</details>`);
+          (stack ||= []).push({ label: text, panel: list(next) });
           i++;
-        } else out.push(`<p${set}>${text}</p>`);
+          continue;
+        }
+        closeStack();
+        out.push(`<p${set}>${text}</p>`);
       } else if (!part.ordered && part.items.every((item) => /^\[[^\]]+\]\([^)\s]+\)$/.test(item))) {
+        closeStack();
         out.push(`<nav class="elsewhere" aria-label="Elsewhere">${part.items.map(inline).join('\n')}</nav>`);
-      } else out.push(list(part));
+      } else {
+        closeStack();
+        out.push(list(part));
+      }
     }
   }
+  closeStack();
   return out.join('\n');
 }
 

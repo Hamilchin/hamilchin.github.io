@@ -1,8 +1,9 @@
 // Automata: a playground for cellular automata.
 //
-// Three kinds of world share one instrument: Life-like rules, elementary
-// (one-dimensional) rules, and Langton's ants and turmites, plus a test mode of
-// random 1D automata. Each kind keeps its own document (world, rule, colors and
+// Several kinds of world share one instrument: Life-like rules, elementary
+// (one-dimensional) rules, Langton's ants and turmites, Turing machines on a 1D
+// tape, and two modes where every click starts a 1D automaton: test mode, with
+// random rules, and interesting mode, with rules chosen for being worth watching. Each kind keeps its own document (world, rule, colors and
 // undo history). They share the speed, the view and the world's size and edges:
 // switching kinds keeps your place and starts the new kind in a clean world.
 //
@@ -22,7 +23,8 @@
 import { LifeWorld, parseLifeRule, formatLifeRule, sameLifeRule, randomLifeRule, lifeMutations } from './life.js';
 import { ElementaryWorld, randomElementaryRule, elementaryMutations } from './elementary.js';
 import { AntWorld, parseAntRule, formatAntRule, sameAntRule, randomAntRule, antMutations, isAnt } from './ant.js';
-import { LIFE_PRESETS, ELEMENTARY_PRESETS, ANT_PRESETS } from './presets.js';
+import { LIFE_PRESETS, ELEMENTARY_PRESETS, ANT_PRESETS, TURING_PRESETS } from './presets.js';
+import { TuringWorld, parseTuringRule, formatTuringRule, sameTuringRule, randomTuringRule, turingMutations } from './turing.js';
 import { paletteById, paletteColors, extendColors, gridColor, customPalettes, setCustomPalettes } from './palettes.js';
 import { createRenderer } from './renderer.js';
 import { History } from './history.js';
@@ -30,6 +32,7 @@ import { encodeState, decodeState, gridCells, gridRecipe } from './share.js';
 import { worldThumb } from './thumbs.js';
 import { rng, randomSeed, clamp, storage, line, $, prefersReducedMotion } from './util.js';
 import { TestWorld, TUNING, testColors } from './test.js';
+import { INTERESTING } from './interesting.js';
 import { createUI } from './ui.js';
 import { mountShell } from './shell.js';
 
@@ -106,6 +109,23 @@ export const KINDS = {
     settings: () => ({ arrangement: 'one', noise: 0 }),
     cost: () => 6e-6,
   },
+  turing: {
+    id: 'turing',
+    unit: 'Step',
+    presets: TURING_PRESETS,
+    make: (W, H) => new TuringWorld(W, H),
+    parse: parseTuringRule,
+    format: formatTuringRule,
+    same: sameTuringRule,
+    random: (r, current) => randomTuringRule(r, current),
+    mutations: (rule, r) => turingMutations(rule, r, 9).map((m) => ({ ...m, title: formatTuringRule(m.rule) })),
+    presetRule: (p) => parseTuringRule(p.rule),
+    name: (rule) => formatTuringRule(rule),
+    speed: 7,
+    palette: 'graphite',
+    settings: () => ({ style: 'blank', density: 0.3 }),
+    cost: (w) => w.W * 6e-7,
+  },
   // Each click starts its own random 1D automaton; there is no rule to edit.
   test: {
     id: 'test',
@@ -125,7 +145,28 @@ export const KINDS = {
     settings: () => ({ ...TUNING }),
     cost: (w) => w.W * 1e-5,
   },
+  // Like test mode, but each click draws from a catalog of chosen rules.
+  interesting: {
+    id: 'interesting',
+    unit: 'Step',
+    presets: [],
+    make: (W, H) => Object.assign(new TestWorld(W, H), { catalog: INTERESTING }),
+    parse: () => null,
+    format: () => '',
+    same: () => true,
+    random: () => 0,
+    mutations: () => [],
+    presetRule: () => 0,
+    name: () => 'Interesting',
+    speed: SPEEDS.length - 1,
+    palette: null,
+    settings: () => ({ ...TUNING }),
+    cost: (w) => w.W * 1e-5,
+  },
 };
+
+/** Kinds where every click starts an automaton of its own, and time fades what they draw. */
+export const spawns = (kind) => kind === 'test' || kind === 'interesting';
 
 // ---------------------------------------------------------------- app state
 
@@ -163,7 +204,7 @@ function createDoc(kind, W, H) {
   const world = K.make(W, H);
   world.wrap = true;
   const settings = K.settings();
-  if (kind === 'test') world.tuning = settings;
+  if (spawns(kind)) world.tuning = settings;
   return {
     kind,
     K,
@@ -210,9 +251,23 @@ function centeredOn(view, wx, wy) {
 
 // ---------------------------------------------------------------- colors
 
+// A Turing machine's head shows its state in these colors, and turns gray when it halts.
+const HEAD_COLORS = ['#e5322d', '#f2a41e', '#2f7ad6', '#1a9e6e', '#d0559a', '#7a5cd0'];
+const HALTED_COLOR = '#8a8983';
+
+/** The colors for a Turing machine's picture: its tape's colors from the palette, then its head in each state, then halted. */
+export function machineColors(doc, rule) {
+  const p = doc.palette.id && paletteById(doc.palette.id), K = rule.colors + rule.states + 1;
+  // A palette made by editing colors holds the head's colors too.
+  if (p?.custom || (!p && doc.palette.colors)) return extendColors(p?.colors || doc.palette.colors, K);
+  const tape = paletteColors(p || paletteById(doc.K.palette), rule.colors, app.theme);
+  return [...tape, ...HEAD_COLORS.slice(0, rule.states), HALTED_COLOR];
+}
+
 /** The document's palette resolved to K colors in the current theme. */
 export function colorsFor(doc, K) {
-  if (doc.kind === 'test') return testColors(doc.settings.palette).slice(0, Math.max(K, 2));
+  if (spawns(doc.kind)) return testColors(doc.settings.palette).slice(0, Math.max(K, 2));
+  if (doc.kind === 'turing') return machineColors(doc, doc.world.rule);
   const p = doc.palette.id && paletteById(doc.palette.id);
   if (p) return paletteColors(p, K, app.theme);
   if (doc.palette.colors) return extendColors(doc.palette.colors, K);
@@ -229,7 +284,7 @@ function applyColors() {
   renderer.setColors(
     colors,
     // Test mode is always dark, even around the world.
-    doc.kind === 'test' ? colors[0] : css.getPropertyValue('--bg').trim() || (dark ? '#0b0b0b' : '#f1f1ef'),
+    spawns(doc.kind) ? colors[0] : css.getPropertyValue('--bg').trim() || (dark ? '#0b0b0b' : '#f1f1ef'),
     { color: gridColor(colors[0]), alpha: 1 },
     { color: '#000000', alpha: 0 },
     { color: dark ? '#ffffff' : '#000000', alpha: dark ? 0.16 : 0.18 },
@@ -360,7 +415,7 @@ function runSteps(doc, want, budget) {
     if (left <= 0 && done > 0) break;
     let chunk = Math.max(1, Math.min(want - done, Math.floor(Math.max(left, 0.25) / doc.cost), doc.kind === 'ant' ? 8e6 : 4096));
     // A pattern spreads at most a cell a step, so a few steps at a time can never reach an edge unseen.
-    if (app.unbounded && (doc.kind === 'life' || doc.kind === 'eca')) {
+    if (app.unbounded && (doc.kind === 'life' || doc.kind === 'eca' || doc.kind === 'turing')) {
       chunk = Math.min(chunk, OPEN_STEPS);
       makeRoom(doc, chunk);
     }
@@ -402,6 +457,12 @@ function advance(doc, dt) {
 }
 
 function haltNotice(doc) {
+  if (doc.kind === 'turing') {
+    const w = doc.world, marks = w.population();
+    if (w.offEdge) toast('The head ran into the edge of the tape', { action: 'Wrap', run: () => cur() === doc && setWrap(true) });
+    else toast(`Halted after ${formatSteps(w.gen)}, leaving ${marks.toLocaleString('en-US')} mark${marks === 1 ? '' : 's'}`);
+    return;
+  }
   if (doc.kind !== 'ant') return;
   if (!doc.world.count) {
     toast('No ants. Click anywhere to place one.');
@@ -414,13 +475,15 @@ function haltNotice(doc) {
   });
 }
 
+const formatSteps = (n) => `${n.toLocaleString('en-US')} step${n === 1 ? '' : 's'}`;
+
 // ---------------------------------------------------------------- actions
 
 /** Starts the run. Undo can go back to where it started, unless `record` is false (test mode starting itself). */
 function play(record = true) {
   const doc = cur();
   if (app.playing) return;
-  if (doc.halted || (doc.kind === 'ant' && doc.world.liveAnts === 0)) {
+  if (doc.halted || (doc.kind === 'ant' && doc.world.liveAnts === 0) || (doc.kind === 'turing' && doc.world.halted)) {
     haltNotice(doc);
     return;
   }
@@ -453,7 +516,7 @@ function stepOnce(n = 1) {
 /** Steps back by replaying from the nearest snapshot before the target, as far as the start of the run. */
 function stepBack(n = 1) {
   const doc = cur(), w = doc.world;
-  if (doc.kind === 'test') return;
+  if (spawns(doc.kind)) return;
   pause();
   cancelCatchUp();
   const target = Math.max(doc.seed.gen, w.gen - n);
@@ -556,7 +619,7 @@ function reseed() {
   cancelCatchUp();
   const seed = randomSeed(), r = rng(seed);
   let recipe = null;
-  if (doc.kind === 'test') {
+  if (spawns(doc.kind)) {
     // A handful of automata, one drawing, at random places in the upper half of what you see of the world.
     const v = doc.view, hw = app.screen.w / 2 / v.zoom, hh = app.screen.h / 2 / v.zoom;
     const top = w.frame ? w.frame.top : w.oy, bottom = w.frame ? w.frame.bottom : w.oy + w.H;
@@ -573,6 +636,10 @@ function reseed() {
   } else if (doc.kind === 'eca') {
     const random = doc.settings.style === 'random';
     w.seedWith(random ? { random: doc.settings.density } : 'single', r);
+    if (random) recipe = { seed, density: doc.settings.density, area: 1 };
+  } else if (doc.kind === 'turing') {
+    const random = doc.settings.style === 'random';
+    w.seedWith(random ? { random: doc.settings.density } : 'blank', r);
     if (random) recipe = { seed, density: doc.settings.density, area: 1 };
   } else {
     if (doc.settings.noise > 0) {
@@ -661,11 +728,19 @@ function loadPreset(index) {
   } else if (doc.kind === 'eca') {
     s.style = p.seed === 'single' ? 'single' : 'random';
     if (p.seed.random != null) s.density = p.seed.random;
+  } else if (doc.kind === 'turing') {
+    s.style = 'blank';
   } else {
     s.arrangement = 'one';
     s.noise = 0;
   }
   setRule(doc.K.presetRule(p));
+  // A famous machine starts over on a blank tape, so it does what it's famous for.
+  if (doc.kind === 'turing') {
+    doc.world.clear();
+    commitSeed(doc);
+    touched(doc);
+  }
   ui.updateWorld();
 }
 
@@ -729,7 +804,7 @@ function setMode(kind, { fresh = true } = {}) {
   ui.setMode(kind);
   applyColors();
   dirty.world = dirty.draw = dirty.overlay = true;
-  if (kind === 'test') play(false);
+  if (spawns(kind)) play(false);
 }
 
 /**
@@ -740,7 +815,7 @@ function setMode(kind, { fresh = true } = {}) {
  */
 function freshStart(doc, prev) {
   const w = doc.world, before = capture(doc, 'switch'), p = prev.world;
-  if (doc.kind === 'test' && app.unbounded) frameTest(doc);
+  if (spawns(doc.kind) && app.unbounded) frameTest(doc);
   else {
     const [W, H] = app.size;
     const [ox, oy] =
@@ -749,7 +824,7 @@ function freshStart(doc, prev) {
     w.clear();
     w.ox = ox;
     w.oy = oy;
-    if (doc.kind === 'test') w.frame = null;
+    if (spawns(doc.kind)) w.frame = null;
   }
   if (!app.unbounded) w.wrap = p.wrap;
   if (doc.kind === 'ant') w.placeAnts(doc.settings.arrangement);
@@ -812,12 +887,12 @@ function deletePalette(id) {
 function setSetting(key, value) {
   const doc = cur();
   doc.settings[key] = value;
-  if (doc.kind === 'test' && key === 'palette') {
+  if (spawns(doc.kind) && key === 'palette') {
     applyColors();
     ui.updateTestLog();
   }
   // Turning persist off lets whatever it was holding go.
-  if (doc.kind === 'test' && key === 'persist' && !value) doc.world.release();
+  if (spawns(doc.kind) && key === 'persist' && !value) doc.world.release();
   ui.updateWorld();
 }
 
@@ -902,7 +977,7 @@ function toPlane(sx, sy) {
 /** The plane cell a press at a screen point acts on. In a 1D world that is always on the newest line. */
 function cellAt(sx, sy) {
   const doc = cur(), [px, py] = toPlane(sx, sy);
-  return [Math.floor(px), doc.kind === 'eca' ? doc.world.currentRow + doc.world.oy : Math.floor(py)];
+  return [Math.floor(px), doc.kind === 'eca' || doc.kind === 'turing' ? doc.world.currentRow + doc.world.oy : Math.floor(py)];
 }
 
 /**
@@ -951,7 +1026,8 @@ function makeRoom(doc, steps) {
     if (!(l || t || r || b)) return;
     if (((l || r) && w.W >= SIDE_MAX) || ((t || b) && w.H >= SIDE_MAX)) w.wrap = true;
     else growWorld(doc, l ? growBy(w.W) : 0, t ? growBy(w.H) : 0, r ? growBy(w.W) : 0, b ? growBy(w.H) : 0);
-  } else if (doc.kind === 'eca') {
+  } else if (doc.kind === 'eca' || doc.kind === 'turing') {
+    // A 1D pattern widens a cell a side per step at most, and a Turing machine's head moves a cell.
     const [l, r] = w.nearSides(OPEN_MARGIN);
     if ((l || r) && w.W >= SIDE_MAX) w.wrap = true;
     else growWorld(doc, l ? growBy(w.W) : 0, 0, r ? growBy(w.W) : 0, w.gen + steps >= w.H - 1 ? growBy(w.H) : 0);
@@ -990,7 +1066,7 @@ function openWorld(doc) {
   const w = doc.world;
   w.wrap = !app.unbounded;
   w.open = app.unbounded;
-  if (doc.kind === 'test' && doc.view) {
+  if (spawns(doc.kind) && doc.view) {
     if (app.unbounded) frameTest(doc);
     else {
       const [W, H] = app.size;
@@ -1081,7 +1157,9 @@ function strokeBegin(px, py) {
   const at = reach(doc, px, py);
   if (!at) return false;
   cancelCatchUp();
-  stroke = { doc, value: (doc.world.get(...at) + 1) % doc.world.states, last: [px, py], entry, changed: false };
+  // A brush lays down the color after the cell's own (on a Turing machine's tape, only tape colors).
+  const colors = doc.world.paints ?? doc.world.states, here = doc.world.get(...at);
+  stroke = { doc, value: here < colors ? (here + 1) % colors : 1, last: [px, py], entry, changed: false };
   paintAt(px, py);
   return true;
 }
@@ -1148,6 +1226,17 @@ function antPlace(px, py) {
     toast('No room for more ants');
     return false;
   }, entry);
+}
+
+/** Puts a Turing machine's head on a plane cell of its tape, in state A. */
+function headPlace(px) {
+  const doc = cur(), w = doc.world, x = px - w.ox, entry = capture(doc, 'head');
+  if (x < 0 || x >= w.W) return;
+  cancelCatchUp();
+  w.placeHead(x);
+  doc.history.push(entry);
+  commitSeed(doc, keptRecipe(doc));
+  touched(doc);
 }
 
 /** The ant on a plane cell, if there is one. */
@@ -1224,7 +1313,7 @@ function onPointerDown(e) {
   if (pointers.size > 2) return;
   const doc = cur();
   const [cx, cy] = cellAt(x, y);
-  if (doc.kind === 'test' && e.button === 0 && !space) {
+  if (spawns(doc.kind) && e.button === 0 && !space) {
     spawnAt(cx, cy);
     gesture = { kind: 'spawn', last: [cx, cy] };
     return;
@@ -1250,8 +1339,8 @@ function onPointerDown(e) {
     gesture = { kind: 'line', x0: cx, y0: cy };
     app.linePreview = [cx, cy, cx, cy];
     dirty.overlay = true;
-  } else if (doc.kind === 'ant') {
-    // A click places an ant; once the pointer travels, it paints instead.
+  } else if (doc.kind === 'ant' || doc.kind === 'turing') {
+    // A click places an ant (or a Turing machine's head); once the pointer travels, it paints instead.
     gesture = { kind: 'pending', x, y, cx, cy, slop: e.pointerType === 'touch' ? 10 : 5 };
   } else {
     strokeBegin(cx, cy);
@@ -1336,7 +1425,7 @@ function onPointerUp(e) {
     spawnAt(...cellAt(gesture.x, gesture.y));
   } else if (gesture?.kind === 'stroke') strokeEnd();
   else if (gesture?.kind === 'ant') antEnd();
-  else if (gesture?.kind === 'pending' && e.type === 'pointerup') antPlace(gesture.cx, gesture.cy);
+  else if (gesture?.kind === 'pending' && e.type === 'pointerup') (cur().kind === 'turing' ? headPlace : antPlace)(gesture.cx, gesture.cy);
   else if (gesture?.kind === 'line' && app.linePreview) {
     drawLine(...app.linePreview);
     app.linePreview = null;
@@ -1407,6 +1496,8 @@ function onKeyDown(e) {
     2: () => setMode('eca'),
     3: () => setMode('ant'),
     4: () => setMode('test'),
+    5: () => setMode('turing'),
+    6: () => setMode('interesting'),
     c: () => ui.toggleConfigs(),
     '?': () => ui.toggleHelp(),
     escape: () => {
@@ -1538,7 +1629,7 @@ function frame(now) {
   const doc = cur();
   stepViewAnim(now);
   if (app.catchUp) runCatchUp(Math.max(24, app.frameMs * 1.6));
-  else if (app.playing && doc.kind === 'test') advanceTest(doc, dt);
+  else if (app.playing && spawns(doc.kind)) advanceTest(doc, dt);
   else if (app.playing) advance(doc, dt);
   measureRate(doc, now);
   if (dirty.world) {
@@ -1556,7 +1647,7 @@ function frame(now) {
       originY: oy,
       cell,
       dpr,
-      rowOffset: doc.kind === 'eca' ? doc.world.rowOffset : 0,
+      rowOffset: doc.world.rowOffset ?? 0,
       gridAlpha: app.gridlines ? clamp((doc.view.zoom - 5) / 7, 0, 1) : 0,
       open: app.unbounded,
     });
@@ -1613,6 +1704,8 @@ function stateOf(doc) {
     s.ants = [];
     for (let k = 0; k < w.count; k++) s.ants.push({ x: w.ax[k], y: w.ay[k], d: w.ad[k], s: w.as[k], alive: w.alive[k] });
   }
+  // The picture shows the head in its state's color, so the color under it travels separately.
+  if (doc.kind === 'turing') s.head = { x: w.head, s: w.state, c: w.tape[w.head], halted: w.halted };
   return s;
 }
 
@@ -1646,6 +1739,7 @@ async function applyState(s) {
   scratch.gen = s.gen;
   scratch.ox = s.ox;
   scratch.oy = s.oy;
+  if (s.mode === 'turing' && s.head && !recipe) scratch.readTape(s.head.x, s.head.s, s.head.c, s.head.halted);
   pause();
   cancelCatchUp();
   remember(doc, 'load');
@@ -1675,7 +1769,7 @@ let lastHash = '';
 
 async function share() {
   const doc = cur();
-  if (doc.kind === 'test') return toast('Test mode has nothing to link to');
+  if (spawns(doc.kind)) return toast('Nothing to link to here: every click starts something new');
   const url = encodeState(stateOf(doc)).then((hash) => {
     // From the home page, a link opens the world in the app on its own.
     if (app.site) return new URL(`automata/#${hash}`, location.href).href;
@@ -1727,7 +1821,7 @@ function uniqueName(base) {
 /** Saves the world as it is (rule, colors, cells and ants) to your library. */
 async function saveToLibrary() {
   const doc = cur(), w = doc.world;
-  if (doc.kind === 'test') return;
+  if (spawns(doc.kind)) return;
   const item = {
     id: `${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`,
     kind: doc.kind,
@@ -1957,7 +2051,9 @@ const api = {
     if (app.mode !== 'test') setMode('test');
     spawnAt(...cellAt(sx, sy));
   },
-  testLog: () => (app.docs.test?.world.log || []),
+  machineColors,
+  spawns,
+  testLog: () => (spawns(app.mode) ? cur().world.log : []),
   fit,
   zoomStep,
   share,

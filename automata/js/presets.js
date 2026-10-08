@@ -65,3 +65,12 @@ export const ANT_PRESETS = [
   { name: 'Stepped pyramid', rule: '021080181110', steps: 60000 },
   { name: 'Maze', rule: '181181110012081111', steps: 900000 },
 ];
+
+// Turing machines, in the Busy Beaver Challenge's notation (see turing.js). The busy
+// beavers run longest of all machines their size before halting.
+export const TURING_PRESETS = [
+  { name: 'Busy beaver, 2 states', rule: '1RB1LB_1LA1RZ' },
+  { name: 'Busy beaver, 3 states', rule: '1RB1RZ_1LB0RC_1LC1LA' },
+  { name: 'Busy beaver, 4 states', rule: '1RB1LB_1LA0LC_1RZ1LD_1RD0RA' },
+  { name: 'Binary counter', rule: '2RB2RB1LA_0LA1RB2RB' },
+];

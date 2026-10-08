@@ -7,9 +7,9 @@
 
 import { h, $, $$, formatInt, formatCompact, parseCount, rng, storage } from './util.js';
 import { icon } from './icons.js';
-import { lifeEditor, elementaryEditor, antEditor } from './editors.js';
+import { lifeEditor, elementaryEditor, antEditor, turingEditor } from './editors.js';
 import { PALETTES, paletteColors, customPalettes } from './palettes.js';
-import { ThumbQueue, THUMB, lifeThumb, elementaryThumb, antThumb } from './thumbs.js';
+import { ThumbQueue, THUMB, lifeThumb, elementaryThumb, antThumb, turingThumb } from './thumbs.js';
 import { TEST_PALETTES, MIN_COLORS, MAX_COLORS, SWEEPS, testInks } from './test.js';
 import { openPicker, closePicker, pickerOpen } from './picker.js';
 
@@ -206,13 +206,15 @@ export function createUI(api) {
           ? elementaryEditor((r) => api.setRule(r))
           : kind === 'ant'
             ? antEditor((r) => api.setRule(r))
-            : { el: h('div'), update() {} }; // test mode has no rule
-    if (kind === 'test' && has('configs-tall')) setTall(false);
-    if (kind === 'test') buildTestPanel();
+            : kind === 'turing'
+              ? turingEditor((r) => api.setRule(r))
+              : { el: h('div'), update() {} }; // test mode has no rule
+    if (api.spawns(kind) && has('configs-tall')) setTall(false);
+    if (api.spawns(kind)) buildTestPanel();
     els.ruleEditor.replaceChildren(editor.el);
     els.genLabel.textContent = KINDS[kind].unit;
-    els.popLabel.textContent = kind === 'eca' ? 'Line' : kind === 'ant' ? 'Painted' : kind === 'test' ? 'Lit' : 'Alive';
-    els.ruleText.setAttribute('aria-label', kind === 'life' ? 'Rule in B/S notation' : kind === 'eca' ? 'Rule number, 0 to 255' : 'Ant turns, or a turmite in digit notation');
+    els.popLabel.textContent = { eca: 'Line', ant: 'Painted', test: 'Lit', interesting: 'Lit', turing: 'Marks' }[kind] || 'Alive';
+    els.ruleText.setAttribute('aria-label', { life: 'Rule in B/S notation', eca: 'Rule number, 0 to 255', ant: 'Ant turns, or a turmite in digit notation', turing: 'Machine in Busy Beaver Challenge notation' }[kind] || 'Rule');
     thumbs.clear();
     thumbsKey = '';
     updateLists();
@@ -275,11 +277,12 @@ export function createUI(api) {
   function renderThumb(canvas, doc, rule, seed) {
     thumbs.add(() => {
       if (!canvas.isConnected) return;
-      // Ant previews get as many colors as their own rule uses.
-      const colors = api.colorsFor(doc, doc.kind === 'ant' ? rule.colors : 2);
+      // Ant previews get as many colors as their own rule uses; a Turing machine's, its head's too.
+      const colors = doc.kind === 'turing' ? api.machineColors(doc, rule) : api.colorsFor(doc, doc.kind === 'ant' ? rule.colors : 2);
       // One cell is shown at generation 47: rules like B1/S1 collapse to a few cells every 16 generations.
       if (doc.kind === 'life') lifeThumb(canvas, rule, colors, seed, seed.single ? 47 : 72);
       else if (doc.kind === 'eca') elementaryThumb(canvas, rule, colors, seed);
+      else if (doc.kind === 'turing') turingThumb(canvas, rule, colors);
       else antThumb(canvas, rule, colors, seed, app.antColor);
     });
   }
@@ -438,7 +441,7 @@ export function createUI(api) {
 
   function buildSwatches() {
     const doc = api.cur();
-    if (doc.kind === 'test') return els.swatches.replaceChildren();
+    if (api.spawns(doc.kind)) return els.swatches.replaceChildren();
     const colors = api.docColors(doc);
     shownColors = colors.length;
     const cells = colors.map((c, i) =>
@@ -461,7 +464,7 @@ export function createUI(api) {
   /** Your own palettes first, each with a way to delete it, then the built-in ones. */
   function buildPalettes() {
     const doc = api.cur();
-    if (doc.kind === 'test') return els.palettes.replaceChildren();
+    if (api.spawns(doc.kind)) return els.palettes.replaceChildren();
     const K = Math.max(doc.world.states, 2);
     const item = (p) => {
       const cols = paletteColors(p, K, app.theme).slice(0, Math.min(Math.max(K, 5), 8));
@@ -521,7 +524,7 @@ export function createUI(api) {
       row('Edges', segmented('Edges', [['wrap', 'Wrap', 'Opposite edges meet'], ['walls', 'Walls', doc.kind === 'ant' ? 'Ants stop at the edge' : 'Beyond the edge is empty']], w.wrap ? 'wrap' : 'walls', (v) => api.setWrap(v === 'wrap'))),
     ];
     // On an unbounded canvas there are no edges, and test mode's frame sizes itself.
-    const shown = !app.unbounded ? rows : doc.kind === 'test' ? [] : rows.slice(0, 1);
+    const shown = !app.unbounded ? rows : api.spawns(doc.kind) ? [] : rows.slice(0, 1);
     els.world.replaceChildren(...shown);
     els.world.closest('.group').hidden = !shown.length;
   }
@@ -539,6 +542,9 @@ export function createUI(api) {
     } else if (doc.kind === 'ant') {
       rows.push(row('Ants', segmented('Ants', [['one', '1'], ['pair', '2'], ['quad', '4'], ['scatter', '12', 'Twelve at random']], s.arrangement, (v) => api.setSetting('arrangement', v))));
       rows.push(slider('seed-noise', 'Noise', s.noise, 0, 0.6, 0.01, pct, (v) => (doc.settings.noise = v)));
+    } else if (doc.kind === 'turing') {
+      rows.push(row('Tape', segmented('Tape', [['blank', 'Blank'], ['random', 'Random']], s.style, (v) => api.setSetting('style', v))));
+      if (s.style === 'random') rows.push(slider('seed-density', 'Density', s.density, 0.02, 0.98, 0.01, pct, (v) => (doc.settings.density = v)));
     }
     rows.push(h('button.ghost-btn.wide', { type: 'button', text: 'New random start', title: 'N', dataset: { key: 'reseed' }, onclick: () => api.reseed() }));
     els.start.replaceChildren(...rows);
@@ -584,7 +590,8 @@ export function createUI(api) {
       t.min = v;
       if (t.max < v) setSlider(most, (t.max = v), count(v));
     });
-    $('#test-colors').replaceChildren(fewest, most);
+    // Interesting mode's rules come with their own colors; only the palette applies.
+    $('#test-colors').replaceChildren(...(app.mode === 'test' ? [fewest, most] : []));
     $('#test-palettes').replaceChildren(
       ...TEST_PALETTES.map((p) =>
         h(
@@ -602,19 +609,19 @@ export function createUI(api) {
 
   /** The rules of the latest spawns, newest first: each rule's number and what each sum of three cells becomes. */
   function updateTestLog() {
-    if (app.mode !== 'test') return;
+    if (!api.spawns(app.mode)) return;
     const inks = testInks(api.cur().settings.palette);
     const log = api.testLog();
     $('#test-log').replaceChildren(
       ...(log.length
-        ? log.map(({ rule, code }, i) => {
+        ? log.map(({ rule, code, name: title }, i) => {
             // Highest first, as Wolfram draws them: sums for a totalistic rule, the eight neighborhoods for an elementary one.
             const cases = [...rule.out].map((v, s) => [s, v]).reverse();
             const name = (s) => (rule.tot ? `Sum ${s}` : s.toString(2).padStart(3, '0'));
             return h(
               'div.log-entry',
               { class: i ? '' : 'latest' },
-              h('div.log-head', null, h('span.log-code', { text: code ? BigInt(code).toLocaleString('en-US') : `Rule ${rule.number}`, title: code ? `Totalistic code ${code}` : 'Elementary rule' }), h('span.log-meta', { text: `${rule.k} colors` })),
+              h('div.log-head', null, h('span.log-code', { text: title || (code ? BigInt(code).toLocaleString('en-US') : `Rule ${rule.number}`), title: title || (code ? `Totalistic code ${code}` : 'Elementary rule') }), h('span.log-meta', { text: [`${rule.k} colors`, rule.r > 1 && `range ${rule.r}`, rule.note].filter(Boolean).join(' · ') })),
               h(
                 'div.log-rule',
                 { 'aria-label': rule.tot ? 'What each sum of the three cells above becomes' : 'What each pattern of the three cells above becomes' },
@@ -662,7 +669,7 @@ export function createUI(api) {
   function updateHistory() {
     const doc = api.cur();
     els.undo.disabled = !doc.history.canUndo;
-    els.back.disabled = doc.kind === 'test' || doc.world.gen <= doc.seed.gen;
+    els.back.disabled = api.spawns(doc.kind) || doc.world.gen <= doc.seed.gen;
   }
 
   function speedText(doc) {
@@ -712,7 +719,7 @@ export function createUI(api) {
     const doc = api.cur(), w = doc.world;
     if (!force && now - lastStats < 110) return;
     lastStats = now;
-    els.back.disabled = doc.kind === 'test' || w.gen <= doc.seed.gen;
+    els.back.disabled = api.spawns(doc.kind) || w.gen <= doc.seed.gen;
     if (SPEEDS[app.speed] === Infinity) els.speedOut.textContent = speedText(doc);
     if (!countersOn) return;
     if (document.activeElement !== els.gen) els.gen.value = formatInt(w.gen);
