@@ -99,7 +99,8 @@ html[data-site]:not(.toolbar-folded) .site {
   margin: 0 0 1.25rem;
   padding: 0;
   border: 0;
-  border-radius: 2px;
+  border-radius: 50%;
+  overflow: hidden;
   background: #f2f1ec;
   overflow: hidden;
   cursor: pointer;

@@ -173,11 +173,11 @@ function prose(s) {
 
 // The portrait.
 {
-  const faces = [3, 4, 5, 6, 7, 0, 0, 7, 6, 5, 4, 3, 2, 1, 1, 2];
+  const faces = [1, 2, 3, 4, 5, 0, 0, 5, 4, 3, 2];
   const button = document.querySelector('.portrait'), img = button.querySelector('img');
   let at = 0;
   const preload = () => {
-    for (let n = 1; n <= 7; n++) new Image().src = `images/face-${n}.png`;
+    for (let n = 1; n <= 5; n++) new Image().src = `images/face-${n}.png`;
   };
   button.addEventListener('pointerenter', preload, { once: true });
   button.addEventListener('focus', preload, { once: true });
