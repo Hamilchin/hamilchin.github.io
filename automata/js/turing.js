@@ -9,15 +9,23 @@
 // without writing); underscores separate the states. "1RB1LB_1LA1RZ" is the
 // two-state busy beaver.
 //
+// Any number of machines can share one tape, each with its own table, place and
+// state; a click starts a random one. On every step they take turns, oldest first,
+// each reading whatever the ones before it wrote. They all use the tape's colors,
+// but each can have as many states as it likes. The newest is the one whose table
+// the editor shows.
+//
 // The world is a picture that grows a line per step, like the elementary automata's:
-// the tape after each step, with the head's cell in its state's color. Lines live in
-// a ring buffer, so once the picture is full it scrolls. Only the newest line, the
-// tape as it is now, can be drawn on.
+// the tape after each step, with each head's cell in its state's color. A machine
+// that halts shows gray on the line where it stopped, and nothing after. Lines live
+// in a ring buffer, so once the picture is full it scrolls. Only the newest line,
+// the tape as it is now, can be drawn on.
 
 export const MAX_STATES = 6;
 export const MAX_COLORS = 4;
 export const HALT = -1;
 const KEEP = 255; // an undefined case: write nothing, stay, halt
+const MAX_MACHINES = 256;
 const LETTERS = 'ABCDEF';
 
 const letter = (s) => (s === HALT ? 'Z' : LETTERS[s]);
@@ -187,17 +195,18 @@ export class TuringWorld {
     // Where the picture's top-left cell sits on the plane; growing the world to the left moves it.
     this.ox = 0;
     this.oy = 0;
-    this.head = W >> 1;
-    this.state = 0;
-    this.halted = false;
-    this.offEdge = false; // halted by running into a wall rather than by its table
+    // The machines, oldest first: { rule, x, state, halted, offEdge, born, stop }, where
+    // `offEdge` says it halted by running into a wall rather than by its table, and
+    // `born` and `stop` are the steps it started and halted on.
+    this.machines = [];
+    // The newest machine's table, which a fresh tape starts with too.
     this.rule = parseTuringRule('1RB1LB_1LA1RZ');
-    this._draw();
+    this.clear();
   }
 
-  /** Values in the picture: the tape's colors, then one for the head in each state, then one for a halted head. */
+  /** Values in the picture: the tape's colors, then a head in each state a machine can have, then a head that has halted. */
   get states() {
-    return this.rule.colors + this.rule.states + 1;
+    return this.rule.colors + MAX_STATES + 1;
   }
 
   /** Colors a brush can lay on the tape. */
@@ -205,24 +214,61 @@ export class TuringWorld {
     return this.rule.colors;
   }
 
-  /** A new machine takes over the tape as it stands. Colors and states it lacks fold into ones it has. */
+  get newest() {
+    return this.machines[this.machines.length - 1] || null;
+  }
+
+  /** Whether no machine is left running. */
+  get halted() {
+    return !this.machines.some((m) => !m.halted);
+  }
+
+  /** Whether a machine stopped by running into the edge of a walled tape. */
+  get offEdge() {
+    return this.machines.some((m) => m.offEdge);
+  }
+
+  _machine(rule, x) {
+    return { rule, x: Math.min(this.W - 1, Math.max(0, x)), state: 0, halted: false, offEdge: false, born: this.gen, stop: -1 };
+  }
+
+  /**
+   * The newest machine takes a new table and carries on from where it is, halted or
+   * not. Another number of colors changes the tape under every machine: colors it
+   * loses fold into ones it keeps, and the other machines' tables follow along.
+   */
   setRule(rule) {
-    const old = this.rule;
+    const old = this.rule, k = rule.colors;
     this.rule = rule;
-    if (old && (old.colors !== rule.colors || old.states !== rule.states)) {
-      // Repaint the history in the new machine's values.
+    if (old.colors !== k) {
       const map = new Uint8Array(256);
-      for (let v = 0; v < 256; v++) {
-        if (v < old.colors) map[v] = v % rule.colors;
-        else if (v - old.colors === old.states) map[v] = rule.colors + rule.states;
-        else map[v] = rule.colors + Math.min(v - old.colors, rule.states - 1);
-      }
+      for (let v = 0; v < 256; v++) map[v] = v < old.colors ? v % k : Math.min(255, v - old.colors + k);
       for (let i = 0; i < this.grid.length; i++) this.grid[i] = map[this.grid[i]];
-      for (let x = 0; x < this.W; x++) this.tape[x] %= rule.colors;
+      for (let x = 0; x < this.W; x++) this.tape[x] %= k;
+      for (const m of this.machines) m.rule = withColors(m.rule, k);
     }
-    if (this.state >= rule.states) this.state = 0;
-    this.halted = this.offEdge = false;
+    const m = this.newest;
+    if (m) {
+      m.rule = rule;
+      if (m.state >= rule.states) m.state = 0;
+      m.halted = m.offEdge = false;
+    }
     this._draw();
+  }
+
+  /**
+   * Starts another machine at column x in state A, on the tape as it stands; it becomes
+   * the newest. Machines that halted before this step make way.
+   */
+  spawn(x, rule) {
+    if (rule.colors !== this.rule.colors) rule = withColors(rule, this.rule.colors);
+    this.machines = this.machines.filter((m) => !m.halted || m.stop === this.gen);
+    if (this.machines.length >= MAX_MACHINES) this.machines.shift();
+    const m = this._machine(rule, x);
+    this.machines.push(m);
+    this.rule = rule;
+    this._draw();
+    return m;
   }
 
   /** Generation shown on the top line of the picture. */
@@ -240,41 +286,48 @@ export class TuringWorld {
     return this.gen - this.topGen;
   }
 
-  /** Draws the newest line: the tape, and the head in its state's color. */
-  _draw() {
-    const at = (this.gen % this.H) * this.W;
-    this.grid.set(this.tape, at);
-    this.grid[at + this.head] = this.rule.colors + (this.halted ? this.rule.states : this.state);
+  /** Draws line `gen` of the picture: the tape, each running head in its state's color, and the heads that halted on this step. */
+  _line(gen) {
+    const at = (gen % this.H) * this.W, k = this.rule.colors, grid = this.grid;
+    grid.set(this.tape, at);
+    for (const m of this.machines) if (!m.halted || m.stop === gen) grid[at + m.x] = k + (m.halted ? MAX_STATES : m.state);
   }
 
-  /** Runs up to n steps; returns how many ran before the machine halted. */
+  _draw() {
+    this._line(this.gen);
+  }
+
+  /** Runs up to n steps; returns how many ran before every machine had halted. */
   step(n) {
-    const W = this.W, H = this.H, tape = this.tape, grid = this.grid;
-    const { colors: k, states: S, write, move, next } = this.rule;
-    let head = this.head, state = this.state, gen = this.gen, s = 0;
-    for (; s < n && !this.halted; s++) {
-      const i = state * k + tape[head];
-      if (write[i] === KEEP) this.halted = true;
-      else {
-        tape[head] = write[i];
-        let x = head + move[i];
+    const W = this.W, tape = this.tape, ms = this.machines, k = this.rule.colors;
+    let s = 0;
+    for (; s < n; s++) {
+      const gen = this.gen + 1;
+      let live = false;
+      for (const m of ms) {
+        if (m.halted) continue;
+        live = true;
+        const i = m.state * k + tape[m.x], { write, move, next } = m.rule;
+        if (write[i] === KEEP) {
+          [m.halted, m.stop] = [true, gen];
+          continue;
+        }
+        tape[m.x] = write[i];
+        let x = m.x + move[i];
         if (x < 0 || x >= W) {
           // Past the edge of a walled world there's no tape: the machine stops at the edge.
           if (this.wrap) x = (x + W) % W;
-          else [x, this.halted, this.offEdge] = [head, true, true];
+          else [x, m.halted, m.offEdge] = [m.x, true, true];
         }
-        head = x;
-        if (next[i] === HALT) this.halted = true;
-        else state = next[i];
+        m.x = x;
+        if (next[i] === HALT) m.halted = true;
+        else m.state = next[i];
+        if (m.halted) m.stop = gen;
       }
-      gen++;
-      const at = (gen % H) * W;
-      grid.set(tape, at);
-      grid[at + head] = k + (this.halted ? S : state);
+      if (!live) break;
+      this.gen = gen;
+      this._line(gen);
     }
-    this.head = head;
-    this.state = state;
-    this.gen = gen;
     return s;
   }
 
@@ -300,22 +353,12 @@ export class TuringWorld {
     return true;
   }
 
-  /** Puts the head on a cell of the tape, in state A, ready to go. */
-  placeHead(x) {
-    this.head = Math.min(this.W - 1, Math.max(0, x));
-    this.state = 0;
-    this.halted = this.offEdge = false;
-    this._draw();
-  }
-
-  /** A blank tape, the head in the middle in state A. */
+  /** A blank tape, and on it the newest machine alone, in the middle, in state A. */
   clear() {
     this.grid.fill(0);
     this.tape.fill(0);
     this.gen = 0;
-    this.head = this.W >> 1;
-    this.state = 0;
-    this.halted = this.offEdge = false;
+    this.machines = [this._machine(this.rule, this.W >> 1)];
     this._draw();
   }
 
@@ -343,13 +386,19 @@ export class TuringWorld {
     const tape = new Uint8Array(this.W);
     tape.set(this.tape, l);
     this.tape = tape;
-    this.head += l;
+    for (const m of this.machines) m.x += l;
     this.ox -= l;
   }
 
-  /** Whether the head is within m cells of the left or right side: [left, right]. */
+  /** Whether a running head is within m cells of the left or right side: [left, right]. */
   nearSides(m) {
-    return [this.head < m, this.head >= this.W - m];
+    let l = false, r = false;
+    for (const h of this.machines) {
+      if (h.halted) continue;
+      if (h.x < m) l = true;
+      if (h.x >= this.W - m) r = true;
+    }
+    return [l, r];
   }
 
   /** Keeps the newest lines that fit, centered. */
@@ -366,12 +415,12 @@ export class TuringWorld {
     const tape = new Uint8Array(W);
     for (let x = 0; x < oW; x++) if (x + dx >= 0 && x + dx < W) tape[x + dx] = this.tape[x];
     this.tape = tape;
-    this.head = Math.min(W - 1, Math.max(0, this.head + dx));
+    for (const m of this.machines) m.x = Math.min(W - 1, Math.max(0, m.x + dx));
     this._draw();
   }
 
   snapshot() {
-    return { W: this.W, H: this.H, ox: this.ox, oy: this.oy, grid: this.grid.slice(), tape: this.tape.slice(), gen: this.gen, head: this.head, state: this.state, halted: this.halted, offEdge: this.offEdge };
+    return { W: this.W, H: this.H, ox: this.ox, oy: this.oy, grid: this.grid.slice(), tape: this.tape.slice(), gen: this.gen, rule: this.rule, machines: this.machines.map((m) => ({ ...m })) };
   }
 
   restore(snap) {
@@ -386,23 +435,26 @@ export class TuringWorld {
     this.ox = snap.ox ?? 0;
     this.oy = snap.oy ?? 0;
     if (snap.tape) this.tape.set(snap.tape);
-    this.head = snap.head ?? this.W >> 1;
-    this.state = Math.min(snap.state ?? 0, this.rule.states - 1);
-    this.halted = !!snap.halted;
-    this.offEdge = !!snap.offEdge;
+    if (snap.rule) this.rule = snap.rule;
+    this.machines = (snap.machines || []).map((m) => ({ ...m }));
   }
 
   /**
-   * Takes the tape from the newest line of the picture, as from a link: the head's
-   * own cell shows its state there, so the color under it is given separately.
+   * Puts machines on the tape as a link describes them, oldest first: { x, s, c, halted, rule }.
+   * Unless a random fill already made the tape, it's read from the newest line of the
+   * picture, where each head's cell shows its state, so the color under it comes separately.
    */
-  readTape(head, state, under, halted = false) {
+  load(list, fromPicture = true) {
     const at = (this.gen % this.H) * this.W, k = this.rule.colors;
-    for (let x = 0; x < this.W; x++) this.tape[x] = this.grid[at + x] < k ? this.grid[at + x] : 0;
-    this.head = Math.min(this.W - 1, Math.max(0, head));
-    this.tape[this.head] = under % k;
-    this.state = Math.min(state, this.rule.states - 1);
-    this.halted = halted;
+    if (fromPicture) for (let x = 0; x < this.W; x++) this.tape[x] = this.grid[at + x] < k ? this.grid[at + x] : 0;
+    this.machines = list.map((d) => {
+      const m = this._machine(d.rule.colors === k ? d.rule : withColors(d.rule, k), d.x);
+      if (fromPicture) this.tape[m.x] = d.c % k;
+      m.state = Math.min(d.s, m.rule.states - 1);
+      if (d.halted) [m.halted, m.stop] = [true, this.gen];
+      return m;
+    });
+    if (this.machines.length) this.rule = this.newest.rule;
     this._draw();
   }
 }

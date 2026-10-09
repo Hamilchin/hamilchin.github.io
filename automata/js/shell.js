@@ -47,6 +47,8 @@ const SHELL = (home) => `
     <section class="test-panel test-only">
       <h2 class="group-title">Latest</h2>
       <div id="test-log" class="test-log"></div>
+      <h2 class="group-title">Drawing</h2>
+      <div id="test-draw" class="rows"></div>
       <h2 class="group-title">Fade</h2>
       <div id="test-fade" class="rows"></div>
       <h2 class="group-title">Colors</h2>
@@ -140,9 +142,9 @@ const SHELL = (home) => `
     <dt><kbd>⇧</kbd> drag</dt><dd>Straight line</dd>
     <dt>Right drag</dt><dd>Move around (or <kbd>Space</kbd> drag)</dd>
     <dt>Scroll</dt><dd>Zoom</dd>
-    <dt>Click</dt><dd>Ants: place one, or turn it. Turing: put the head there</dd>
+    <dt>Click</dt><dd>Ants: place one, or turn it. Turing: start a random machine there</dd>
     <dt>Right click</dt><dd>Ants: remove one</dd>
-    <dt>Click, drag</dt><dd>Test, Interesting: start automata</dd>
+    <dt>Click, drag</dt><dd>Test, Interesting: start an automaton, or draw a line of random cells for one to grow from</dd>
   </dl>
 </dialog>
 

@@ -10,7 +10,7 @@ The arrow in the top-left corner opens the automata playground over the whole pa
 
 ## Automata
 
-[`/automata/`](automata/) is a playground for cellular automata: Life-like rules, elementary (one-dimensional) rules, Langton's ants and turmites, and a test mode of random one-dimensional automata. Rules are edited visually, every rule shows its one-change neighbors, and runs can be shared as links.
+[`/automata/`](automata/) is a playground for cellular automata: Life-like rules, elementary (one-dimensional) rules, Langton's ants and turmites, Turing machines that share one tape (each click starts another, with a random table), a test mode of random one-dimensional automata, and an interesting mode drawing from a catalog of chosen ones. In test and interesting modes, a click starts an automaton and a drag draws a line of random cells for one to grow from. Rules are edited visually, every rule shows its one-change neighbors, and runs can be shared as links.
 
 ## Previewing
 

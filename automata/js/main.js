@@ -1,11 +1,12 @@
 // Automata: a playground for cellular automata.
 //
 // Several kinds of world share one instrument: Life-like rules, elementary
-// (one-dimensional) rules, Langton's ants and turmites, Turing machines on a 1D
-// tape, and two modes where every click starts a 1D automaton: test mode, with
-// random rules, and interesting mode, with rules chosen for being worth watching. Each kind keeps its own document (world, rule, colors and
-// undo history). They share the speed, the view and the world's size and edges:
-// switching kinds keeps your place and starts the new kind in a clean world.
+// (one-dimensional) rules, Langton's ants and turmites, Turing machines sharing a
+// 1D tape (every click starts another), and two modes where every click starts a
+// 1D automaton: test mode, with random rules, and interesting mode, with rules
+// chosen for being worth watching. Each kind keeps its own document (world, rule,
+// colors and undo history). They share the speed, the view and the world's size
+// and edges: switching kinds keeps your place and starts the new kind in a clean world.
 //
 // The simulation runs on the main thread in time-budgeted batches. Each frame
 // advances as many steps as the speed asks for, up to a slice of the frame, and
@@ -24,7 +25,7 @@ import { LifeWorld, parseLifeRule, formatLifeRule, sameLifeRule, randomLifeRule,
 import { ElementaryWorld, randomElementaryRule, elementaryMutations } from './elementary.js';
 import { AntWorld, parseAntRule, formatAntRule, sameAntRule, randomAntRule, antMutations, isAnt } from './ant.js';
 import { LIFE_PRESETS, ELEMENTARY_PRESETS, ANT_PRESETS, TURING_PRESETS } from './presets.js';
-import { TuringWorld, parseTuringRule, formatTuringRule, sameTuringRule, randomTuringRule, turingMutations } from './turing.js';
+import { TuringWorld, parseTuringRule, formatTuringRule, sameTuringRule, randomTuringRule, turingMutations, MAX_STATES } from './turing.js';
 import { paletteById, paletteColors, extendColors, gridColor, customPalettes, setCustomPalettes } from './palettes.js';
 import { createRenderer } from './renderer.js';
 import { History } from './history.js';
@@ -47,8 +48,8 @@ const OPEN_MARGIN = 24;
 const OPEN_STEPS = 16;
 // New worlds fill the window at this many pixels per cell.
 const CELL_PX = 3;
-// On the home page, automata draw themselves at 2,000 lines a second.
-const SITE_SPEED = SPEEDS.indexOf(2e3);
+// Test and interesting modes, the home page's included, start out drawing 1,000 lines a second.
+const TEST_SPEED = SPEEDS.indexOf(1e3);
 // Snapshots kept along a run for stepping back, and the memory they may take.
 const MARKS_MAX = 24;
 const MARKS_BYTES = 48 * 2 ** 20;
@@ -139,7 +140,7 @@ export const KINDS = {
     mutations: () => [],
     presetRule: () => 0,
     name: () => 'Test',
-    speed: SPEEDS.length - 1,
+    speed: TEST_SPEED,
     palette: null,
     // How it paints and fades; the world reads these as they change.
     settings: () => ({ ...TUNING }),
@@ -158,7 +159,7 @@ export const KINDS = {
     mutations: () => [],
     presetRule: () => 0,
     name: () => 'Interesting',
-    speed: SPEEDS.length - 1,
+    speed: TEST_SPEED,
     palette: null,
     settings: () => ({ ...TUNING }),
     cost: (w) => w.W * 1e-5,
@@ -251,17 +252,17 @@ function centeredOn(view, wx, wy) {
 
 // ---------------------------------------------------------------- colors
 
-// A Turing machine's head shows its state in these colors, and turns gray when it halts.
+// A Turing machine's head shows its state in these colors, one for each state a machine can have, and turns gray when it halts.
 const HEAD_COLORS = ['#e5322d', '#f2a41e', '#2f7ad6', '#1a9e6e', '#d0559a', '#7a5cd0'];
 const HALTED_COLOR = '#8a8983';
 
-/** The colors for a Turing machine's picture: its tape's colors from the palette, then its head in each state, then halted. */
+/** The colors for a Turing machine's picture: its tape's colors from the palette, then a head in each state, then halted. */
 export function machineColors(doc, rule) {
-  const p = doc.palette.id && paletteById(doc.palette.id), K = rule.colors + rule.states + 1;
+  const p = doc.palette.id && paletteById(doc.palette.id), K = rule.colors + MAX_STATES + 1;
   // A palette made by editing colors holds the head's colors too.
   if (p?.custom || (!p && doc.palette.colors)) return extendColors(p?.colors || doc.palette.colors, K);
   const tape = paletteColors(p || paletteById(doc.K.palette), rule.colors, app.theme);
-  return [...tape, ...HEAD_COLORS.slice(0, rule.states), HALTED_COLOR];
+  return [...tape, ...HEAD_COLORS, HALTED_COLOR];
 }
 
 /** The document's palette resolved to K colors in the current theme. */
@@ -458,9 +459,11 @@ function advance(doc, dt) {
 
 function haltNotice(doc) {
   if (doc.kind === 'turing') {
-    const w = doc.world, marks = w.population();
-    if (w.offEdge) toast('The head ran into the edge of the tape', { action: 'Wrap', run: () => cur() === doc && setWrap(true) });
-    else toast(`Halted after ${formatSteps(w.gen)}, leaving ${marks.toLocaleString('en-US')} mark${marks === 1 ? '' : 's'}`);
+    const w = doc.world, n = w.machines.length, marks = w.population(), left = `leaving ${marks.toLocaleString('en-US')} mark${marks === 1 ? '' : 's'}`;
+    if (!n) toast('Click anywhere to start a machine');
+    else if (w.offEdge) toast(n > 1 ? 'A head ran into the edge of the tape' : 'The head ran into the edge of the tape', { action: 'Wrap', run: () => cur() === doc && setWrap(true) });
+    else if (n === 1) toast(`Halted after ${formatSteps(w.newest.stop - w.newest.born)}, ${left}`);
+    else toast(`Every machine has halted, ${left}`);
     return;
   }
   if (doc.kind !== 'ant') return;
@@ -546,19 +549,46 @@ function reset() {
 
 /**
  * Test mode: a click starts an automaton at that plane cell, and time starts if it
- * was stopped. Options go on to the world's spawn: `fresh: false` for the spawns
- * after the first in a drag, which all belong to one drawing, and `rng` for random starts.
+ * was stopped. Options go on to the world's spawn: `fresh: false` for automata that
+ * belong to one drawing with the one before, and `rng` for random starts. Returns
+ * the automaton, if the cell is in the world.
  */
 function spawnAt(px, py, opts = {}) {
   const doc = cur(), w = doc.world;
   if (w.frame) coverTest(doc, py);
   const x = px - w.ox, y = py - w.oy;
-  if (!inside(doc, x, y)) return;
+  if (!inside(doc, x, y)) return null;
   // In a frame, every automaton wraps around at its sides, whatever the edges setting.
-  w.spawn(x, y, { wraps: w.wrap || !!w.frame, ...opts });
+  const run = w.spawn(x, y, { wraps: w.wrap || !!w.frame, ...opts });
   dirty.world = true;
   ui.updateTestLog();
   if (!app.playing) play(false);
+  return run;
+}
+
+/**
+ * Dragging in test mode. With the line setting, the automaton the press started goes
+ * back to its first line, and the drag lays random cells along it, for it to grow
+ * from once the drag ends. Otherwise every cell the drag reaches starts another,
+ * each its own drawing, so the one before lets go.
+ */
+function spawnDrag(g, px, py) {
+  if (cur().settings.drag !== 'line') {
+    spawnAt(px, py);
+    return;
+  }
+  const w = cur().world;
+  // A press off the world starts its line where the drag first reaches it.
+  if (!g.run || g.world !== w || g.run.dead) [g.run, g.world] = [spawnAt(px, py), w];
+  if (!g.run) return;
+  if (!g.run.pen) w.pen(g.run);
+  w.penTo(g.run, px - w.ox);
+  dirty.world = true;
+}
+
+/** The end of a drag that drew a line: the automaton grows down from it. */
+function liftLine(g) {
+  if (g?.kind === 'spawn' && g.run?.pen) g.world.lift(g.run);
 }
 
 /**
@@ -1228,15 +1258,24 @@ function antPlace(px, py) {
   }, entry);
 }
 
-/** Puts a Turing machine's head on a plane cell of its tape, in state A. */
-function headPlace(px) {
-  const doc = cur(), w = doc.world, x = px - w.ox, entry = capture(doc, 'head');
-  if (x < 0 || x >= w.W) return;
+/**
+ * Starts a random machine on a plane column of the tape, as many states as the newest
+ * has, sharing the tape with the rest. It becomes the one the editor shows, and time
+ * starts if it was stopped.
+ */
+function machinePlace(px, py) {
+  const doc = cur(), w = doc.world, entry = capture(doc, 'machine');
+  const at = reach(doc, px, py);
+  if (!at) return;
   cancelCatchUp();
-  w.placeHead(x);
+  ui.clearToasts();
+  w.spawn(at[0], randomTuringRule(rng(randomSeed()), w.rule));
   doc.history.push(entry);
+  doc.preset = matchPreset(doc);
+  doc.nearbySeed = randomSeed();
   commitSeed(doc, keptRecipe(doc));
-  touched(doc);
+  touched(doc, { rule: true });
+  if (!app.playing) play(false);
 }
 
 /** The ant on a plane cell, if there is one. */
@@ -1306,6 +1345,7 @@ function onPointerDown(e) {
   if (pointers.size === 2) {
     strokeCancel();
     antCancel();
+    liftLine(gesture);
     const [a, b] = [...pointers.values()];
     gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
     return;
@@ -1314,8 +1354,7 @@ function onPointerDown(e) {
   const doc = cur();
   const [cx, cy] = cellAt(x, y);
   if (spawns(doc.kind) && e.button === 0 && !space) {
-    spawnAt(cx, cy);
-    gesture = { kind: 'spawn', last: [cx, cy] };
+    gesture = { kind: 'spawn', x, y, slop: e.pointerType === 'touch' ? 10 : 4, last: [cx, cy], run: spawnAt(cx, cy), world: doc.world };
     return;
   }
   const onAnt = antOn(doc, cx, cy) >= 0;
@@ -1340,7 +1379,7 @@ function onPointerDown(e) {
     app.linePreview = [cx, cy, cx, cy];
     dirty.overlay = true;
   } else if (doc.kind === 'ant' || doc.kind === 'turing') {
-    // A click places an ant (or a Turing machine's head); once the pointer travels, it paints instead.
+    // A click places an ant (or starts a Turing machine); once the pointer travels, it paints instead.
     gesture = { kind: 'pending', x, y, cx, cy, slop: e.pointerType === 'touch' ? 10 : 5 };
   } else {
     strokeBegin(cx, cy);
@@ -1358,8 +1397,7 @@ function pagePointerDown(e, x, y) {
   else if (e.button === 0) {
     if (app.mode !== 'test') setMode('test');
     const at = cellAt(x, y);
-    spawnAt(...at);
-    gesture = { kind: 'spawn', last: at };
+    gesture = { kind: 'spawn', x, y, slop: 4, last: at, run: spawnAt(...at), world: cur().world };
   } else gesture = { kind: 'none' };
 }
 
@@ -1392,8 +1430,11 @@ function onPointerMove(e) {
   }
   if (gesture.kind === 'spawn') {
     const [cx, cy] = app.hover;
+    // A press that wanders a little is still a click.
+    if (!gesture.moved && Math.hypot(x - gesture.x, y - gesture.y) <= gesture.slop) return;
+    gesture.moved = true;
     if (cx !== gesture.last[0] || cy !== gesture.last[1]) {
-      spawnAt(cx, cy, { fresh: false });
+      spawnDrag(gesture, cx, cy);
       gesture.last = [cx, cy];
     }
   } else if (gesture.kind === 'pan') {
@@ -1424,8 +1465,9 @@ function onPointerUp(e) {
     if (app.mode !== 'test') setMode('test');
     spawnAt(...cellAt(gesture.x, gesture.y));
   } else if (gesture?.kind === 'stroke') strokeEnd();
+  else if (gesture?.kind === 'spawn') liftLine(gesture);
   else if (gesture?.kind === 'ant') antEnd();
-  else if (gesture?.kind === 'pending' && e.type === 'pointerup') (cur().kind === 'turing' ? headPlace : antPlace)(gesture.cx, gesture.cy);
+  else if (gesture?.kind === 'pending' && e.type === 'pointerup') (cur().kind === 'turing' ? machinePlace : antPlace)(gesture.cx, gesture.cy);
   else if (gesture?.kind === 'line' && app.linePreview) {
     drawLine(...app.linePreview);
     app.linePreview = null;
@@ -1704,8 +1746,8 @@ function stateOf(doc) {
     s.ants = [];
     for (let k = 0; k < w.count; k++) s.ants.push({ x: w.ax[k], y: w.ay[k], d: w.ad[k], s: w.as[k], alive: w.alive[k] });
   }
-  // The picture shows the head in its state's color, so the color under it travels separately.
-  if (doc.kind === 'turing') s.head = { x: w.head, s: w.state, c: w.tape[w.head], halted: w.halted };
+  // The picture shows each head in its state's color, so the color under it travels separately.
+  if (doc.kind === 'turing') s.machines = w.machines.map((m) => ({ x: m.x, s: m.state, c: w.tape[m.x], halted: m.halted, rule: formatTuringRule(m.rule) }));
   return s;
 }
 
@@ -1739,7 +1781,8 @@ async function applyState(s) {
   scratch.gen = s.gen;
   scratch.ox = s.ox;
   scratch.oy = s.oy;
-  if (s.mode === 'turing' && s.head && !recipe) scratch.readTape(s.head.x, s.head.s, s.head.c, s.head.halted);
+  // Each machine brings its own table; one without gives the link's.
+  if (s.mode === 'turing' && (s.machines.length || !recipe)) scratch.load(s.machines.map((m) => ({ ...m, rule: (m.rule && parseTuringRule(m.rule)) || rule })), !recipe);
   pause();
   cancelCatchUp();
   remember(doc, 'load');
@@ -1941,7 +1984,7 @@ async function boot() {
   const saved = storage('automata.mode');
   const start = app.site ? 'test' : KINDS[saved] ? saved : 'ant';
   // Every kind runs at the speed of the one the app opens on, until you choose another.
-  app.speed = app.site ? SITE_SPEED : KINDS[start].speed;
+  app.speed = KINDS[start].speed;
   app.mode = null;
   setMode(start, { fresh: false });
 

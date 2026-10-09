@@ -26,6 +26,10 @@
 // next one starts, and then goes the same way. The grid holds what is shown: 0 for
 // the ground, and 1 + (state - 1) * LEVELS + brightness.
 //
+// An automaton can also start from a line drawn by hand: it waits on its first line,
+// held, while random cells are laid along it, and grows down from all of them once
+// the line is done (see `pen`).
+//
 // Work is lazy. Each automaton keeps the time its newest line was (or would have
 // been) drawn, and moves down only as far as anyone can see (`limit`, set just below
 // the screen). Out of sight it waits; when more comes into view it catches up, and
@@ -56,6 +60,7 @@ export const TUNING = {
   max: 4, // and the most
   palette: 'dusk',
   persist: true, // hold each drawing until the next one starts
+  drag: 'line', // dragging draws a line of random cells to grow from ('line'), or starts automata all along the way ('trail')
 };
 
 // Always dark, so white text on top stays readable. Every palette shares the dark
@@ -198,6 +203,7 @@ export class TestWorld {
     this.rowAt = new Float64Array(H).fill(Infinity);
     this.lit = null; // bounding box of lit cells: [x0, y0, x1, y1]
     this.rows = [0, H - 1]; // lines changed since they were last taken
+    this.held = null; // bounding box of held cells, so letting them go only looks there
     this.gen = 0;
   }
 
@@ -271,8 +277,17 @@ export class TestWorld {
     if (c1 < 0) return;
     if (c0 < this.rowL[y]) this.rowL[y] = c0;
     if (c1 > this.rowR[y]) this.rowR[y] = c1;
-    if (held) this.holding = true;
-    else if (fadeAt < this.rowAt[y]) this.rowAt[y] = fadeAt;
+    if (held) {
+      this.holding = true;
+      const h = this.held;
+      if (!h) this.held = [c0, y, c1, y];
+      else {
+        if (c0 < h[0]) h[0] = c0;
+        if (y < h[1]) h[1] = y;
+        if (c1 > h[2]) h[2] = c1;
+        if (y > h[3]) h[3] = y;
+      }
+    } else if (fadeAt < this.rowAt[y]) this.rowAt[y] = fadeAt;
     const b = this.lit;
     if (!b) this.lit = [c0, y, c1, y];
     else {
@@ -299,7 +314,7 @@ export class TestWorld {
     const at = x - bx;
     // `at`: when its newest line was (or would have been) drawn. `freeAt`: when its drawing was let go; Infinity while it's held.
     // A rule with memory also keeps the line before last, `prev`, and where it was lit (plo…phi).
-    const run = { id, rule, bx, n, wraps, row: new Uint8Array(n), next: new Uint8Array(n), prev: rule.mem ? new Uint8Array(n) : null, lo: at, hi: at, plo: Infinity, phi: -Infinity, s0: at, s1: at, y, y0: y, dead: false };
+    const run = { id, rule, bx, n, wraps, row: new Uint8Array(n), next: new Uint8Array(n), prev: rule.mem ? new Uint8Array(n) : null, lo: at, hi: at, plo: Infinity, phi: -Infinity, s0: at, s1: at, x0: at, y, y0: y, dead: false, pen: false };
     run.at = this.clock;
     run.freeAt = this.tuning.persist ? Infinity : -Infinity;
     if (rule.block) this._strip(run, at, rule.block, rng);
@@ -339,6 +354,69 @@ export class TestWorld {
   }
 
   /**
+   * Turns a run back into a line being drawn by hand: whatever it drew goes, and it
+   * waits on its first line, held, with only its first cell lit, while `penTo` lays
+   * random cells along the line. `lift` lets it grow down from all of them. A run
+   * that had already finished comes back for it.
+   */
+  pen(r) {
+    if (!this.runs.includes(r)) this.runs.push(r);
+    this._erase(r);
+    const at = r.x0;
+    r.row.fill(0);
+    r.prev?.fill(0);
+    r.row[at] = r.rule.seed;
+    [r.lo, r.hi, r.s0, r.s1, r.plo, r.phi] = [at, at, at, at, Infinity, -Infinity];
+    r.y = r.y0;
+    r.pen = true;
+    r.freeAt = Infinity;
+    this._paint(r);
+  }
+
+  /** Draws a held line on out to column x of the world, a random state in every cell it newly reaches. */
+  penTo(r, x, rng = Math.random) {
+    if (!r.pen) return;
+    const u = Math.max(0, Math.min(r.n - 1, x - r.bx)), k = r.rule.k;
+    if (u >= r.s0 && u <= r.s1) return;
+    const [a, b] = u < r.s0 ? [u, r.s0 - 1] : [r.s1 + 1, u];
+    for (let i = a; i <= b; i++) {
+      const v = Math.floor(rng() * k);
+      r.row[i] = v;
+      if (v && i < r.lo) r.lo = i;
+      if (v && i > r.hi) r.hi = i;
+    }
+    if (u < r.s0) r.s0 = u;
+    else r.s1 = u;
+    this._paint(r);
+  }
+
+  /** Lets a line drawn by hand grow down, a line at a time from now. Without persist, its drawing starts to go too. */
+  lift(r) {
+    if (!r.pen) return;
+    r.pen = false;
+    r.at = this.clock;
+    if (!this.tuning.persist) this.release();
+  }
+
+  /** Clears every cell a run has drawn, wherever a newer one hasn't drawn over it. */
+  _erase(r) {
+    const W = this.W, n = r.n, g = this.grid, owner = this.owner;
+    const full = r.s1 - r.s0 + 1 >= n, u0 = full ? 0 : r.s0, u1 = full ? n - 1 : r.s1;
+    const y0 = Math.max(0, r.y0), y1 = Math.min(this.H - 1, r.y);
+    for (let y = y0; y <= y1; y++) {
+      let x = r.wraps ? ((u0 % n) + n) % n : u0;
+      for (let u = u0, at = y * W; u <= u1; u++, x++) {
+        if (x === n) x = 0;
+        const col = r.bx + x;
+        if (col < 0 || col >= W || (owner[at + col] & ID) !== r.id) continue;
+        owner[at + col] = 0;
+        g[at + col] = 0;
+      }
+    }
+    if (y1 >= y0) this._touch(y0, y1);
+  }
+
+  /**
    * Cells remember their writer in 15 bits. Before the numbers run out, count again
    * from the oldest automaton still drawing; anything older can't be overwritten by
    * mistake, since every automaton from then on is newer.
@@ -359,14 +437,15 @@ export class TestWorld {
   /** Lets held cells go: from now they hold and fade as if they had just been painted. */
   release() {
     for (const r of this.runs) if (r.freeAt === Infinity) r.freeAt = this.clock;
+    const b = this.held;
+    this.held = null;
     if (!this.holding) return;
     this.holding = false;
-    const b = this.lit;
     if (!b) return;
     const W = this.W, g = this.grid, due = this.due, owner = this.owner, fade = this.tuning.fade;
     const when = new Map();
     for (let y = b[1]; y <= b[3]; y++) {
-      for (let x = this.rowL[y], i = y * W + x; x <= this.rowR[y]; x++, i++) {
+      for (let x = Math.max(b[0], this.rowL[y]), i = y * W + x, x1 = Math.min(b[2], this.rowR[y]); x <= x1; x++, i++) {
         if (!(owner[i] & HELD)) continue;
         owner[i] &= ID;
         if (!g[i]) continue;
@@ -404,6 +483,11 @@ export class TestWorld {
     this.H = H;
     this.ox += x0;
     this.oy += y0;
+    if (this.held) {
+      const [a, b, c, d] = this.held;
+      this.held = [Math.max(0, a - x0), Math.max(0, b - y0), Math.min(W - 1, c - x0), Math.min(H - 1, d - y0)];
+      if (this.held[0] > this.held[2] || this.held[1] > this.held[3]) this.held = null;
+    }
     for (const r of this.runs) {
       r.bx -= x0;
       r.y -= y0;
@@ -510,6 +594,7 @@ export class TestWorld {
     for (; s < n && this.runs.length; s++) {
       for (let k = 0; k < this.runs.length; k++) {
         const r = this.runs[k];
+        if (r.pen) continue;
         r.at = this.clock;
         if (!this._advance(r)) this.runs.splice(k--, 1);
       }
@@ -532,7 +617,7 @@ export class TestWorld {
       moved = false;
       for (let k = 0; k < this.runs.length; k++) {
         const r = this.runs[k];
-        if (r.y + 1 + this.oy >= this.limit || r.at + gap > this.clock) continue;
+        if (r.pen || r.y + 1 + this.oy >= this.limit || r.at + gap > this.clock) continue;
         r.at += gap;
         if (!this._advance(r)) this.runs.splice(k--, 1);
         else moved = true;
@@ -628,6 +713,7 @@ export class TestWorld {
     this.runs = [];
     this.lit = null;
     this.holding = false;
+    this.held = null;
     this.rows = [0, this.H - 1];
     this.gen = 0;
   }
@@ -658,6 +744,7 @@ export class TestWorld {
       serial: this.serial,
       drawing: this.drawing,
       holding: this.holding,
+      held: this.held && [...this.held],
       frame: this.frame && { ...this.frame },
       runs: this.runs.map(copy),
     };
@@ -686,6 +773,7 @@ export class TestWorld {
     this.serial = Math.max(this.serial, snap.serial ?? 0);
     this.drawing = snap.drawing ?? this.drawing;
     this.holding = !!snap.holding;
+    this.held = snap.held ? [...snap.held] : this.holding ? [0, 0, this.W - 1, this.H - 1] : null;
     this.frame = snap.frame ? { ...snap.frame } : null;
     this.runs = (snap.runs || []).map((r) => ({ ...r, row: r.row.slice(), next: r.next.slice(), prev: r.prev && r.prev.slice() }));
     this._box();

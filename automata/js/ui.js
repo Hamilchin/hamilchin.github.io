@@ -566,6 +566,23 @@ export function createUI(api) {
     const seconds = (v) => `${+(v / 1000).toFixed(2)} s`;
     const sweepText = (i) => (SWEEPS[i] === Infinity ? 'Instant' : SWEEPS[i] >= 1000 ? `${SWEEPS[i] / 1000}k/s` : `${SWEEPS[i]}/s`);
     const sweepAt = SWEEPS.findIndex((v) => v >= t.sweep);
+    $('#test-draw').replaceChildren(
+      row(
+        'Drag',
+        segmented(
+          'Drag',
+          [
+            ['line', 'Line', 'Dragging draws a line of random cells, and one automaton grows from all of it'],
+            ['trail', 'Trail', 'Dragging starts an automaton at every cell along the way'],
+          ],
+          t.drag,
+          (v) => {
+            api.setSetting('drag', v);
+            buildTestPanel();
+          },
+        ),
+      ),
+    );
     $('#test-fade').replaceChildren(
       slider('test-hold', 'Hold', t.hold, 0, 4000, 100, seconds, (v) => (t.hold = v)),
       slider('test-sweep', 'Sweep', sweepAt < 0 ? SWEEPS.length - 1 : sweepAt, 0, SWEEPS.length - 1, 1, sweepText, (i) => (t.sweep = SWEEPS[i])),

@@ -1,7 +1,7 @@
 // Shareable links, and the library's saved worlds. A link carries the rule, colors
-// and world settings and the world exactly as it is: every cell, every ant (or a
-// Turing machine's head) and the step count. Grids are bit-packed and deflated; an untouched random fill is sent
-// as the seed that made it.
+// and world settings and the world exactly as it is: every cell, every ant or
+// Turing machine, and the step count. Grids are bit-packed and deflated; an
+// untouched random fill is sent as the seed that made it.
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
@@ -57,7 +57,8 @@ export const bitsFor = (states) => (states <= 2 ? 1 : states <= 4 ? 2 : states <
 
 /**
  * s: { mode, rule, W, H, ox, oy (where the world sits on the plane), wrap, palette: { id } | { colors }, states, gen,
- *      grid, recipe: { seed, density, area } | null, ants: [{ x, y, d, s, alive }], view: { cx, cy, zoom } }
+ *      grid, recipe: { seed, density, area } | null, ants: [{ x, y, d, s, alive }],
+ *      machines: [{ x, s, c, halted, rule }], view: { cx, cy, zoom } }
  */
 export async function encodeState(s) {
   const q = new URLSearchParams();
@@ -71,8 +72,9 @@ export async function encodeState(s) {
   if (s.recipe) q.set('d', `*${s.recipe.seed}_${s.recipe.density}_${s.recipe.area ?? 1}`);
   else if (s.grid.some((v) => v)) q.set('d', await packCells(s.grid, bitsFor(s.states)));
   if (s.ants && s.ants.length) q.set('a', s.ants.map((a) => `${a.x}.${a.y}.${a.d}.${a.s}${a.alive ? '' : '.0'}`).join('_'));
-  // A Turing machine's head: where it is, its state, the color under it, and whether it has halted.
-  if (s.head) q.set('t', `${s.head.x}.${s.head.s}.${s.head.c}${s.head.halted ? '.h' : ''}`);
+  // Turing machines: where each head is, its state, the color under it, whether it has
+  // halted, and its table when that isn't the link's own rule.
+  if (s.machines?.length) q.set('t', s.machines.map((m) => `${m.x}.${m.s}.${m.c}${m.halted ? '.h' : ''}${m.rule && m.rule !== s.rule ? `.${m.rule}` : ''}`).join('*'));
   if (s.gen) q.set('g', s.gen);
   if (s.view) q.set('v', [s.view.cx, s.view.cy, s.view.zoom].map((v) => +v.toFixed(2)).join('_'));
   return q.toString();
@@ -102,12 +104,14 @@ export async function decodeState(hash) {
           return { x, y, d: d || 0, s: s || 0, alive: alive !== 0 };
         })
       : [],
-    head: null,
+    machines: [],
     view: null,
   };
   if (q.get('t')) {
-    const [x, st, c, h] = q.get('t').split('.');
-    out.head = { x: Math.round(+x) || 0, s: Math.round(+st) || 0, c: Math.round(+c) || 0, halted: h === 'h' };
+    out.machines = q.get('t').split('*').map((t) => {
+      const [x, st, c, ...rest] = t.split('.');
+      return { x: Math.round(+x) || 0, s: Math.round(+st) || 0, c: Math.round(+c) || 0, halted: rest.includes('h'), rule: rest.find((p) => p !== 'h') || null };
+    });
   }
   if (q.get('v')) {
     const [cx, cy, zoom] = q.get('v').split('_').map(Number);
