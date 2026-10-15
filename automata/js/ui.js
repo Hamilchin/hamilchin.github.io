@@ -334,7 +334,7 @@ export function createUI(api) {
   function famousTiles(doc) {
     return doc.K.presets.map((p, i) => {
       const rule = doc.K.presetRule(p);
-      const sub = doc.kind === 'eca' ? null : /^\d+$/.test(p.rule) ? 'turmite' : p.rule;
+      const sub = doc.kind === 'eca' ? null : (p.sub ?? (/^\d+$/.test(p.rule) ? 'turmite' : p.rule));
       const { btn, canvas } = thumbTile({ label: p.name, sub, current: i === doc.preset, onclick: () => api.loadPreset(i) });
       renderThumb(canvas, doc, rule, doc.kind === 'ant' ? p.steps : p.seed);
       return btn;

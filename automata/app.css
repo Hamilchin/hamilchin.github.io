@@ -886,6 +886,11 @@ input[type="range"]::-moz-range-thumb {
   overflow-x: auto;
 }
 
+.machine-scroll.tall {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
 .machine {
   border-collapse: separate;
   border-spacing: 3px;

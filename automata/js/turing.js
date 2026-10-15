@@ -7,7 +7,8 @@
 // and each color it may read, three characters, the color to write, L or R, and
 // the next state, with Z for halt and --- for a case left undefined (which halts
 // without writing); underscores separate the states. "1RB1LB_1LA1RZ" is the
-// two-state busy beaver.
+// two-state busy beaver. Past Y, states take two letters, AA, AB, … (never Z), so
+// a machine can have hundreds of them, though the editor builds them only up to six.
 //
 // Any number of machines can share one tape, each with its own table, place and
 // state; a click starts a random one. On every step they take turns, oldest first,
@@ -21,37 +22,58 @@
 // in a ring buffer, so once the picture is full it scrolls. Only the newest line,
 // the tape as it is now, can be drawn on.
 
+// States a machine can have in the editor, and in all.
 export const MAX_STATES = 6;
+const MOST_STATES = 25 * 26;
 export const MAX_COLORS = 4;
 export const HALT = -1;
 const KEEP = 255; // an undefined case: write nothing, stay, halt
 const MAX_MACHINES = 256;
-const LETTERS = 'ABCDEF';
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXY';
 
-const letter = (s) => (s === HALT ? 'Z' : LETTERS[s]);
+/** A state's name: A to Y, then AA, AB, … */
+function stateName(s) {
+  let name = '';
+  for (s++; s > 0; s = Math.floor(s / 25)) name = LETTERS[--s % 25] + name;
+  return name;
+}
+
+const letter = (s) => (s === HALT ? 'Z' : stateName(s));
+
+// One case: the color to write, L or R, and the next state; or --- for undefined.
+const OP = /---|\d[LR][A-Z]+/g;
+
+const blank = (n, k) => ({ states: n, colors: k, write: new Uint8Array(n * k), move: new Int8Array(n * k), next: new Int16Array(n * k) });
 
 export function parseTuringRule(text) {
   const groups = String(text).trim().replace(/\s+/g, '').toUpperCase().split('_');
-  const n = groups.length, k = groups[0].length / 3;
-  if (!(n >= 1 && n <= MAX_STATES && Number.isInteger(k) && k >= 2 && k <= MAX_COLORS)) return null;
-  const write = new Uint8Array(n * k), move = new Int8Array(n * k), next = new Int8Array(n * k);
+  const n = groups.length, k = groups[0].match(OP)?.length;
+  if (!(n >= 1 && n <= MOST_STATES && k >= 2 && k <= MAX_COLORS)) return null;
+  const r = blank(n, k), { write, move, next } = r;
   for (let s = 0; s < n; s++) {
-    if (groups[s].length !== k * 3) return null;
+    const ops = groups[s].match(OP);
+    if (!ops || ops.length !== k || ops.join('') !== groups[s]) return null;
     for (let c = 0; c < k; c++) {
-      const op = groups[s].slice(c * 3, c * 3 + 3), i = s * k + c;
+      const op = ops[c], i = s * k + c;
       if (op === '---') {
         [write[i], move[i], next[i]] = [KEEP, 0, HALT];
         continue;
       }
-      const m = op.match(/^(\d)([LR])([A-Z])$/);
-      if (!m || +m[1] >= k) return null;
-      // H for halt is common too; with at most six states it can't be a state's name.
-      const to = m[3] === 'Z' || m[3] === 'H' ? HALT : m[3].charCodeAt(0) - 65;
-      if (to >= n) return null;
-      [write[i], move[i], next[i]] = [+m[1], m[2] === 'R' ? 1 : -1, to];
+      if (+op[0] >= k) return null;
+      // H for halt is common too, in machines too small to have a state H.
+      let to = HALT;
+      const name = op.slice(2);
+      if (name !== 'Z' && !(name === 'H' && n < 8)) {
+        if (name.includes('Z')) return null;
+        to = 0;
+        for (const ch of name) to = to * 25 + ch.charCodeAt(0) - 64;
+        to--;
+        if (to >= n) return null;
+      }
+      [write[i], move[i], next[i]] = [+op[0], op[1] === 'R' ? 1 : -1, to];
     }
   }
-  return { states: n, colors: k, write, move, next };
+  return r;
 }
 
 export function formatTuringRule({ states: n, colors: k, write, move, next }) {
@@ -70,7 +92,10 @@ export function formatTuringRule({ states: n, colors: k, write, move, next }) {
 export const sameTuringRule = (a, b) => formatTuringRule(a) === formatTuringRule(b);
 
 /** The name of a state, for the editor: A, B, …, or H for halt. */
-export const stateLetter = (s) => (s === HALT ? 'H' : LETTERS[s]);
+export const stateLetter = (s) => (s === HALT ? 'H' : stateName(s));
+
+/** The color its head shows in, after the tape's: one of MAX_STATES, which a machine with more states goes around. */
+export const headColor = (s) => s % MAX_STATES;
 
 export const isDefined = (rule, s, c) => rule.write[s * rule.colors + c] !== KEEP;
 
@@ -91,10 +116,13 @@ export const withMove = (rule, s, c, m) => edit(rule, s, c, (r, i) => (r.move[i]
 /** Next state, counting through the states and then halt: n = states means halt. */
 export const withNext = (rule, s, c, n) => edit(rule, s, c, (r, i) => (r.next[i] = n % (r.states + 1) === r.states ? HALT : n % (r.states + 1)));
 
-/** More or fewer states. A new state writes the next color and moves right into state A; cases that went to a removed state halt. */
+/**
+ * More or fewer states, up to MAX_STATES, or as many as it has. A new state writes the
+ * next color and moves right into state A; cases that went to a removed state halt.
+ */
 export function withStates(rule, n) {
-  n = Math.min(MAX_STATES, Math.max(1, n));
-  const k = rule.colors, r = { states: n, colors: k, write: new Uint8Array(n * k), move: new Int8Array(n * k), next: new Int8Array(n * k) };
+  n = Math.min(Math.max(MAX_STATES, rule.states), Math.max(1, n));
+  const k = rule.colors, r = blank(n, k);
   for (let s = 0; s < n; s++) {
     for (let c = 0; c < k; c++) {
       const i = s * k + c;
@@ -108,7 +136,7 @@ export function withStates(rule, n) {
 /** More or fewer colors. On a new color, a state writes 0, moves right and stays; writes of a removed color wrap around. */
 export function withColors(rule, k) {
   k = Math.min(MAX_COLORS, Math.max(2, k));
-  const n = rule.states, r = { states: n, colors: k, write: new Uint8Array(n * k), move: new Int8Array(n * k), next: new Int8Array(n * k) };
+  const n = rule.states, r = blank(n, k);
   for (let s = 0; s < n; s++) {
     for (let c = 0; c < k; c++) {
       const i = s * k + c, j = s * rule.colors + c;
@@ -148,10 +176,10 @@ export function probe(rule, steps, W = 2 * steps + 1) {
  * line, and leaves a few marks behind.
  */
 export function randomTuringRule(rng, current) {
-  const n = current?.states ?? 2, k = current?.colors ?? 2;
+  const n = Math.min(MAX_STATES, current?.states ?? 2), k = current?.colors ?? 2;
   let best = null;
   for (let tries = 0; tries < 300; tries++) {
-    const r = { states: n, colors: k, write: new Uint8Array(n * k), move: new Int8Array(n * k), next: new Int8Array(n * k) };
+    const r = blank(n, k);
     for (let i = 0; i < n * k; i++) [r.write[i], r.move[i], r.next[i]] = [Math.floor(rng() * k), rng() < 0.5 ? -1 : 1, Math.floor(rng() * n)];
     const p = probe(r, 600);
     if (p.steps === 600 && p.range >= 12 && p.range <= 300 && p.marks >= 4) return r;
@@ -160,18 +188,21 @@ export function randomTuringRule(rng, current) {
   return best.r;
 }
 
-/** Machines one change away: another color written, the other way, or another next state (halting among them). */
+/**
+ * Machines one change away: another color written, the other way, or another next
+ * state (halting among them). A big machine has a great many, so only the chosen are built.
+ */
 export function turingMutations(rule, rng, count) {
   const out = [];
   const name = (s, c) => `${stateLetter(s)}${c}`;
   for (let s = 0; s < rule.states; s++) {
     for (let c = 0; c < rule.colors; c++) {
       const i = s * rule.colors + c;
-      for (let w = 0; w < rule.colors; w++) if (w !== rule.write[i]) out.push({ rule: withWrite(rule, s, c, w), label: `${name(s, c)}: write ${w}` });
-      out.push({ rule: withMove(rule, s, c, -rule.move[i] || 1), label: `${name(s, c)}: go ${rule.move[i] > 0 ? 'left' : 'right'}` });
+      for (let w = 0; w < rule.colors; w++) if (w !== rule.write[i]) out.push(() => ({ rule: withWrite(rule, s, c, w), label: `${name(s, c)}: write ${w}` }));
+      out.push(() => ({ rule: withMove(rule, s, c, -rule.move[i] || 1), label: `${name(s, c)}: go ${rule.move[i] > 0 ? 'left' : 'right'}` }));
       for (let n = 0; n <= rule.states; n++) {
         const to = n === rule.states ? HALT : n;
-        if (to !== rule.next[i]) out.push({ rule: withNext(rule, s, c, n), label: `${name(s, c)}: then ${stateLetter(to)}` });
+        if (to !== rule.next[i]) out.push(() => ({ rule: withNext(rule, s, c, n), label: `${name(s, c)}: then ${stateLetter(to)}` }));
       }
     }
   }
@@ -180,7 +211,7 @@ export function turingMutations(rule, rng, count) {
     const j = Math.floor(rng() * (i + 1));
     [out[i], out[j]] = [out[j], out[i]];
   }
-  return out.slice(0, count);
+  return out.slice(0, count).map((make) => make());
 }
 
 export class TuringWorld {
@@ -204,7 +235,7 @@ export class TuringWorld {
     this.clear();
   }
 
-  /** Values in the picture: the tape's colors, then a head in each state a machine can have, then a head that has halted. */
+  /** Values in the picture: the tape's colors, then a head in each of its colors, then a head that has halted. */
   get states() {
     return this.rule.colors + MAX_STATES + 1;
   }
@@ -290,7 +321,7 @@ export class TuringWorld {
   _line(gen) {
     const at = (gen % this.H) * this.W, k = this.rule.colors, grid = this.grid;
     grid.set(this.tape, at);
-    for (const m of this.machines) if (!m.halted || m.stop === gen) grid[at + m.x] = k + (m.halted ? MAX_STATES : m.state);
+    for (const m of this.machines) if (!m.halted || m.stop === gen) grid[at + m.x] = k + (m.halted ? MAX_STATES : headColor(m.state));
   }
 
   _draw() {

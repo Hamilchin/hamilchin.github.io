@@ -269,7 +269,7 @@ export function turingEditor(onChange) {
     const tbody = h('tbody');
     for (let s = 0; s < S; s++) {
       const name = TM.stateLetter(s);
-      const tr = h('tr', null, h('th', { scope: 'row' }, h('span.state.head-state', { text: name, style: { '--head': colors[K + s] }, title: `State ${name}, drawn in this color` })));
+      const tr = h('tr', null, h('th', { scope: 'row' }, h('span.state.head-state', { text: name, style: { '--head': colors[K + TM.headColor(s)] }, title: `State ${name}, drawn in this color` })));
       for (let c = 0; c < K; c++) {
         const i = s * K + c, defined = TM.isDefined(rule, s, c);
         const w = rule.write[i], m = rule.move[i], n = rule.next[i];
@@ -307,7 +307,8 @@ export function turingEditor(onChange) {
       tbody.append(tr);
     }
     table.append(tbody);
-    body.replaceChildren(h('div.machine-scroll', null, table));
+    // A machine bigger than the editor builds scrolls in a box of its own.
+    body.replaceChildren(h('div.machine-scroll', { class: S > TM.MAX_STATES ? 'tall' : '' }, table));
   }
 
   return {
@@ -319,7 +320,7 @@ export function turingEditor(onChange) {
       render();
       size.replaceChildren(
         stepper('Colors', r.colors, 2, TM.MAX_COLORS, (d) => onChange(TM.withColors(rule, rule.colors + d))),
-        stepper('States', r.states, 1, TM.MAX_STATES, (d) => onChange(TM.withStates(rule, rule.states + d))),
+        stepper('States', r.states, 1, Math.max(TM.MAX_STATES, r.states), (d) => onChange(TM.withStates(rule, rule.states + d))),
       );
       again();
     },
