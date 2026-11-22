@@ -550,45 +550,18 @@ function reset() {
 /**
  * Test mode: a click starts an automaton at that plane cell, and time starts if it
  * was stopped. Options go on to the world's spawn: `fresh: false` for automata that
- * belong to one drawing with the one before, and `rng` for random starts. Returns
- * the automaton, if the cell is in the world.
+ * belong to one drawing with the one before, and `rng` for random starts.
  */
 function spawnAt(px, py, opts = {}) {
   const doc = cur(), w = doc.world;
   if (w.frame) coverTest(doc, py);
   const x = px - w.ox, y = py - w.oy;
-  if (!inside(doc, x, y)) return null;
+  if (!inside(doc, x, y)) return;
   // In a frame, every automaton wraps around at its sides, whatever the edges setting.
-  const run = w.spawn(x, y, { wraps: w.wrap || !!w.frame, ...opts });
+  w.spawn(x, y, { wraps: w.wrap || !!w.frame, ...opts });
   dirty.world = true;
   ui.updateTestLog();
   if (!app.playing) play(false);
-  return run;
-}
-
-/**
- * Dragging in test mode. With the line setting, the automaton the press started goes
- * back to its first line, and the drag lays random cells along it, for it to grow
- * from once the drag ends. Otherwise every cell the drag reaches starts another,
- * each its own drawing, so the one before lets go.
- */
-function spawnDrag(g, px, py) {
-  if (cur().settings.drag !== 'line') {
-    spawnAt(px, py);
-    return;
-  }
-  const w = cur().world;
-  // A press off the world starts its line where the drag first reaches it.
-  if (!g.run || g.world !== w || g.run.dead) [g.run, g.world] = [spawnAt(px, py), w];
-  if (!g.run) return;
-  if (!g.run.pen) w.pen(g.run);
-  w.penTo(g.run, px - w.ox);
-  dirty.world = true;
-}
-
-/** The end of a drag that drew a line: the automaton grows down from it. */
-function liftLine(g) {
-  if (g?.kind === 'spawn' && g.run?.pen) g.world.lift(g.run);
 }
 
 /**
@@ -1345,7 +1318,6 @@ function onPointerDown(e) {
   if (pointers.size === 2) {
     strokeCancel();
     antCancel();
-    liftLine(gesture);
     const [a, b] = [...pointers.values()];
     gesture = { kind: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
     return;
@@ -1354,7 +1326,8 @@ function onPointerDown(e) {
   const doc = cur();
   const [cx, cy] = cellAt(x, y);
   if (spawns(doc.kind) && e.button === 0 && !space) {
-    gesture = { kind: 'spawn', x, y, slop: e.pointerType === 'touch' ? 10 : 4, last: [cx, cy], run: spawnAt(cx, cy), world: doc.world };
+    spawnAt(cx, cy);
+    gesture = { kind: 'spawn', last: [cx, cy] };
     return;
   }
   const onAnt = antOn(doc, cx, cy) >= 0;
@@ -1397,7 +1370,8 @@ function pagePointerDown(e, x, y) {
   else if (e.button === 0) {
     if (app.mode !== 'test') setMode('test');
     const at = cellAt(x, y);
-    gesture = { kind: 'spawn', x, y, slop: 4, last: at, run: spawnAt(...at), world: cur().world };
+    spawnAt(...at);
+    gesture = { kind: 'spawn', last: at };
   } else gesture = { kind: 'none' };
 }
 
@@ -1430,11 +1404,9 @@ function onPointerMove(e) {
   }
   if (gesture.kind === 'spawn') {
     const [cx, cy] = app.hover;
-    // A press that wanders a little is still a click.
-    if (!gesture.moved && Math.hypot(x - gesture.x, y - gesture.y) <= gesture.slop) return;
-    gesture.moved = true;
+    // Each automaton along a drag is a drawing of its own, so the one before it lets go.
     if (cx !== gesture.last[0] || cy !== gesture.last[1]) {
-      spawnDrag(gesture, cx, cy);
+      spawnAt(cx, cy);
       gesture.last = [cx, cy];
     }
   } else if (gesture.kind === 'pan') {
@@ -1465,7 +1437,6 @@ function onPointerUp(e) {
     if (app.mode !== 'test') setMode('test');
     spawnAt(...cellAt(gesture.x, gesture.y));
   } else if (gesture?.kind === 'stroke') strokeEnd();
-  else if (gesture?.kind === 'spawn') liftLine(gesture);
   else if (gesture?.kind === 'ant') antEnd();
   else if (gesture?.kind === 'pending' && e.type === 'pointerup') (cur().kind === 'turing' ? machinePlace : antPlace)(gesture.cx, gesture.cy);
   else if (gesture?.kind === 'line' && app.linePreview) {
